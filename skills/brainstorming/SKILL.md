@@ -67,20 +67,26 @@ digraph brainstorming {
 
 ## The Process
 
+**Question mechanism (how to ask):**
+
+- Whenever a question offers the user a choice between discrete options — approaches, scope trade-offs, preference confirmations, A/B/C decisions — you MUST ask it with the **AskUserQuestion tool**, which renders an interactive option-picker. Lead with your recommended option (mark it "(recommended)") and let the others follow.
+- NEVER present selectable options as a plain-text numbered/lettered list ("1./2./A./B.") for the user to pick from. Plain text is only for genuinely open-ended questions where the answer is free-form, not a selection.
+- This applies in every mode, including Plan mode, and overrides any other guidance below about presenting options "conversationally" or "in the terminal."
+
 **Understanding the idea:**
 
 - Check out the current project state first (files, docs, recent commits)
 - Before asking detailed questions, assess scope: if the request describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), flag this immediately. Don't spend questions refining details of a project that needs to be decomposed first.
 - If the project is too large for a single spec, help the user decompose into sub-projects: what are the independent pieces, how do they relate, what order should they be built? Then brainstorm the first sub-project through the normal design flow. Each sub-project gets its own spec → plan → implementation cycle.
 - For appropriately-scoped projects, ask questions one at a time to refine the idea
-- Prefer multiple choice questions when possible, but open-ended is fine too
+- Prefer multiple choice questions when possible (asked via the AskUserQuestion tool); open-ended is fine when the answer is genuinely free-form
 - Only one question per message - if a topic needs more exploration, break it into multiple questions
 - Focus on understanding: purpose, constraints, success criteria
 
 **Exploring approaches:**
 
 - Propose 2-3 different approaches with trade-offs
-- Present options conversationally with your recommendation and reasoning
+- Present the choice via the AskUserQuestion tool — one option per approach, recommended option first and marked "(recommended)". Give your reasoning in the surrounding text.
 - Lead with your recommended option and explain why
 
 **Presenting the design:**
@@ -138,7 +144,8 @@ Wait for the user's response. If they request changes, make them and re-run the 
 ## Key Principles
 
 - **One question at a time** - Don't overwhelm with multiple questions
-- **Multiple choice preferred** - Easier to answer than open-ended when possible
+- **Multiple choice preferred** - Easier to answer than open-ended when possible, presented via the AskUserQuestion tool — never as a plain-text list
+- **Selectable options always go through AskUserQuestion** - Any question offering discrete choices uses the interactive picker, not numbered/lettered text
 - **YAGNI ruthlessly** - Remove unnecessary features from all designs
 - **Explore alternatives** - Always propose 2-3 approaches before settling
 - **Incremental validation** - Present design, get approval before moving on
@@ -153,12 +160,13 @@ A browser-based companion for showing mockups, diagrams, and visual options duri
 
 **This offer MUST be its own message.** Do not combine it with clarifying questions, context summaries, or any other content. The message should contain ONLY the offer above and nothing else. Wait for the user's response before continuing. If they decline, proceed with text-only brainstorming.
 
-**Per-question decision:** Even after the user accepts, decide FOR EACH QUESTION whether to use the browser or the terminal. The test: **would the user understand this better by seeing it than reading it?**
+**Per-question decision:** Even after the user accepts, decide FOR EACH QUESTION which mechanism fits. The test: **would the user understand this better by seeing it than reading it?**
 
 - **Use the browser** for content that IS visual — mockups, wireframes, layout comparisons, architecture diagrams, side-by-side visual designs
-- **Use the terminal** for content that is text — requirements questions, conceptual choices, tradeoff lists, A/B/C/D text options, scope decisions
+- **Use the AskUserQuestion tool** for non-visual choices — requirements questions, conceptual A/B/C choices, tradeoff selection, scope decisions. It renders an interactive picker; never list these as plain numbered/lettered text.
+- **Use plain terminal text** only for genuinely open-ended questions where the answer is free-form, not a selection
 
-A question about a UI topic is not automatically a visual question. "What does personality mean in this context?" is a conceptual question — use the terminal. "Which wizard layout works better?" is a visual question — use the browser.
+A question about a UI topic is not automatically a visual question. "What does personality mean in this context?" is a conceptual choice — use AskUserQuestion. "Which wizard layout works better?" is a visual question — use the browser.
 
 If they agree to the companion, read the detailed guide before proceeding:
 `skills/brainstorming/visual-companion.md`

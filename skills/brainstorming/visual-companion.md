@@ -14,15 +14,17 @@ Decide per-question, not per-session. The test: **would the user understand this
 - **Design polish** — when the question is about look and feel, spacing, visual hierarchy
 - **Spatial relationships** — state machines, flowcharts, entity relationships rendered as diagrams
 
-**Use the terminal** when the content is text or tabular:
+**Use the AskUserQuestion tool** when the choice is non-visual (it renders an interactive picker — never list these as plain numbered/lettered text):
 
 - **Requirements and scope questions** — "what does X mean?", "which features are in scope?"
 - **Conceptual A/B/C choices** — picking between approaches described in words
-- **Tradeoff lists** — pros/cons, comparison tables
+- **Tradeoff selection** — choosing among pros/cons or comparison options
 - **Technical decisions** — API design, data modeling, architectural approach selection
-- **Clarifying questions** — anything where the answer is words, not a visual preference
+- **Clarifying questions** — anything where the answer is a selection rather than a visual preference
 
-A question *about* a UI topic is not automatically a visual question. "What kind of wizard do you want?" is conceptual — use the terminal. "Which of these wizard layouts feels right?" is visual — use the browser.
+(Plain terminal text is only for genuinely open-ended questions where the answer is free-form, not a selection.)
+
+A question *about* a UI topic is not automatically a visual question. "What kind of wizard do you want?" is conceptual — use AskUserQuestion. "Which of these wizard layouts feels right?" is visual — use the browser.
 
 ## How It Works
 

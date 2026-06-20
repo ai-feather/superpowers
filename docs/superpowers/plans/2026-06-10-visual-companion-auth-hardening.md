@@ -1,53 +1,53 @@
-# Visual Companion Auth Hardening Implementation Plan
+# Visual Companion 认证加固实现计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **给代理工作者：** 必需的子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 来逐任务地实现本计划。步骤使用复选框（`- [ ]`）语法进行跟踪。
 
-**Goal:** Harden the brainstorming visual companion auth and reconnect flow while preserving trusted same-origin screen JavaScript and future vendored UI libraries.
+**目标：** 加固 brainstorming visual companion 的认证和重连流程，同时保留可信同源屏幕 JavaScript 和未来 vendor 的 UI 库。
 
-**Architecture:** Keyed root loads become a bootstrap step that sets the cookie, stores the key in tab-scoped `sessionStorage`, and navigates to a bare `/` screen URL. WebSockets require valid auth plus browser same-origin `Origin`, while `/files/*` uses realpath containment to prevent content-directory escapes.
+**架构：** 带 key 的根加载变成一个 bootstrap 步骤：设置 cookie、把 key 存入标签页级的 `sessionStorage`、然后跳转到不带参数的 `/` 屏幕 URL。WebSocket 要求有效的认证加上浏览器同源的 `Origin`，而 `/files/*` 使用 realpath 包含检查以防止逃逸出 content 目录。
 
-**Tech Stack:** Node.js built-ins (`http`, `fs`, `path`, `crypto`), zero runtime dependencies, existing `ws` test dependency, Bash start/stop scripts, repo shell lint script.
+**技术栈：** Node.js 内置模块（`http`、`fs`、`path`、`crypto`），零运行时依赖，已有的 `ws` 测试依赖，Bash 启停脚本，仓库 shell lint 脚本。
 
-**Important:** Do not commit during execution unless Drew explicitly asks. This repository's instructions override the generic plan template's commit cadence.
+**重要：** 除非 Drew 明确要求，执行期间不要提交。本仓库的指令覆盖通用计划模板的提交节奏。
 
 ---
 
-## File Map
+## 文件清单
 
-- Modify: `skills/brainstorming/scripts/server.cjs`
-  - Add bootstrap response.
-  - Add shared security headers.
-  - Add WebSocket Origin validation.
-  - Add `/files/*` realpath containment.
-- Modify: `skills/brainstorming/scripts/helper.js`
-  - Read the stored session key and append it to the WebSocket URL.
-- Modify: `tests/brainstorm-server/auth.test.js`
-  - Add bootstrap, header, same-origin WS, cross-origin WS, and cookie/file auth regressions.
-- Modify: `tests/brainstorm-server/helper.test.js`
-  - Add mocked-browser coverage for sessionStorage-backed WS URLs.
-- Modify: `tests/brainstorm-server/server.test.js`
-  - Add symlink containment regression for `/files/*`.
-- Modify: `tests/brainstorm-server/lifecycle.test.js`
-  - Make the start-server timeout flag test force background mode.
-  - Add restart reconnect credential coverage if it fits the existing lifecycle helper.
-- Modify: `skills/brainstorming/scripts/start-server.sh`
-  - Fix shell lint.
-- Modify: `skills/brainstorming/scripts/stop-server.sh`
-  - Fix shell lint.
-- Modify: `.gitignore`
-  - Add `.superpowers/`.
-- Optional docs update: `skills/brainstorming/visual-companion.md`
-  - Mention bootstrap URL stripping and trusted same-origin screen JS if the code behavior changes need operator-facing explanation.
+- 修改：`skills/brainstorming/scripts/server.cjs`
+  - 添加 bootstrap 响应。
+  - 添加共享安全头。
+  - 添加 WebSocket Origin 校验。
+  - 添加 `/files/*` realpath 包含检查。
+- 修改：`skills/brainstorming/scripts/helper.js`
+  - 读取已存储的 session key 并将其附加到 WebSocket URL。
+- 修改：`tests/brainstorm-server/auth.test.js`
+  - 添加 bootstrap、header、同源 WS、跨源 WS、cookie/文件认证回归测试。
+- 修改：`tests/brainstorm-server/helper.test.js`
+  - 添加基于 sessionStorage 的 WS URL 的 mocked-browser 覆盖。
+- 修改：`tests/brainstorm-server/server.test.js`
+  - 添加针对 `/files/*` 的符号链接逃逸回归测试。
+- 修改：`tests/brainstorm-server/lifecycle.test.js`
+  - 让 start-server 超时标记测试强制使用后台模式。
+  - 如果适合现有 lifecycle helper，添加重启重连凭证覆盖。
+- 修改：`skills/brainstorming/scripts/start-server.sh`
+  - 修复 shell lint。
+- 修改：`skills/brainstorming/scripts/stop-server.sh`
+  - 修复 shell lint。
+- 修改：`.gitignore`
+  - 添加 `.superpowers/`。
+- 可选文档更新：`skills/brainstorming/visual-companion.md`
+  - 如果代码行为变更需要面向操作者的说明，则提及 bootstrap URL 剥离和可信同源屏幕 JS。
 
-## Task 1: Bootstrap Keyed Root Loads
+## Task 1：Bootstrap 带 key 的根加载
 
-**Files:**
-- Modify: `tests/brainstorm-server/auth.test.js`
-- Modify: `skills/brainstorming/scripts/server.cjs`
+**文件：**
+- 修改：`tests/brainstorm-server/auth.test.js`
+- 修改：`skills/brainstorming/scripts/server.cjs`
 
-- [ ] **Step 1: Add RED tests for bootstrap behavior**
+- [ ] **Step 1：为 bootstrap 行为添加 RED 测试**
 
-In `tests/brainstorm-server/auth.test.js`, add tests after the existing valid-key root test:
+在 `tests/brainstorm-server/auth.test.js` 中，在已有的 valid-key root 测试之后添加测试：
 
 ```js
     await test('GET / with valid query returns bootstrap instead of screen content', async () => {
@@ -66,22 +66,22 @@ In `tests/brainstorm-server/auth.test.js`, add tests after the existing valid-ke
     });
 ```
 
-Keep the existing cookie test if present; merge assertions rather than duplicating the same test name.
+如果已有 cookie 测试则保留；合并断言而不是重复同名测试。
 
-- [ ] **Step 2: Verify RED**
+- [ ] **Step 2：验证 RED**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/prime-rad/superpowers/tests/brainstorm-server
 node auth.test.js
 ```
 
-Expected: the new bootstrap test fails because current `GET /?key=...` serves `Secret screen` directly and does not include the bootstrap `sessionStorage`/`location.replace` code.
+预期：新的 bootstrap 测试失败，因为当前 `GET /?key=...` 直接返回 `Secret screen`，且不包含 bootstrap 的 `sessionStorage`/`location.replace` 代码。
 
-- [ ] **Step 3: Implement minimal bootstrap response**
+- [ ] **Step 3：实现最小 bootstrap 响应**
 
-In `skills/brainstorming/scripts/server.cjs`, add a helper near the page constants:
+在 `skills/brainstorming/scripts/server.cjs` 中，在页面常量附近添加一个 helper：
 
 ```js
 function bootstrapPage(key) {
@@ -99,7 +99,7 @@ location.replace('/');
 }
 ```
 
-Then in `handleRequest`, after authorization and cookie setting but before serving screen HTML, detect a valid query key on root:
+然后在 `handleRequest` 中，在认证和 cookie 设置之后、返回屏幕 HTML 之前，检测根路径上的有效 query key：
 
 ```js
 function queryKey(url) {
@@ -109,7 +109,7 @@ function queryKey(url) {
 }
 ```
 
-Use it in `handleRequest`:
+在 `handleRequest` 中使用它：
 
 ```js
   const pathname = pathnameOf(req.url);
@@ -121,34 +121,34 @@ Use it in `handleRequest`:
   }
 ```
 
-This assumes Task 4 will introduce `securityHeaders`. If implementing Task 1 first, temporarily use:
+这里假定 Task 4 会引入 `securityHeaders`。如果先实现 Task 1，暂时使用：
 
 ```js
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
 ```
 
-and replace it in Task 4.
+并在 Task 4 中替换掉。
 
-- [ ] **Step 4: Verify GREEN**
+- [ ] **Step 4：验证 GREEN**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/prime-rad/superpowers/tests/brainstorm-server
 node auth.test.js
 ```
 
-Expected: all auth tests pass, including the new bootstrap tests.
+预期：所有 auth 测试通过，包括新的 bootstrap 测试。
 
-## Task 2: WebSocket Origin Enforcement
+## Task 2：WebSocket Origin 强制校验
 
-**Files:**
-- Modify: `tests/brainstorm-server/auth.test.js`
-- Modify: `skills/brainstorming/scripts/server.cjs`
+**文件：**
+- 修改：`tests/brainstorm-server/auth.test.js`
+- 修改：`skills/brainstorming/scripts/server.cjs`
 
-- [ ] **Step 1: Add RED tests for same-origin and cross-origin WS**
+- [ ] **Step 1：为同源和跨源 WS 添加 RED 测试**
 
-In `tests/brainstorm-server/auth.test.js`, extend `wsConnect` to accept an `origin` option:
+在 `tests/brainstorm-server/auth.test.js` 中，扩展 `wsConnect` 以接受 `origin` 选项：
 
 ```js
 function wsConnect({ key, cookie, origin } = {}) {
@@ -168,7 +168,7 @@ function wsConnect({ key, cookie, origin } = {}) {
 }
 ```
 
-Then add:
+然后添加：
 
 ```js
     await test('WS upgrade with valid cookie and same-origin Origin opens', async () => {
@@ -199,20 +199,20 @@ Then add:
     });
 ```
 
-- [ ] **Step 2: Verify RED**
+- [ ] **Step 2：验证 RED**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/prime-rad/superpowers/tests/brainstorm-server
 node auth.test.js
 ```
 
-Expected: cross-origin cookie WS test fails because current server accepts any cookie-authenticated WS regardless of Origin.
+预期：跨源 cookie WS 测试失败，因为当前服务器接受任何带 cookie 认证的 WS 而不管 Origin。
 
-- [ ] **Step 3: Implement Origin check**
+- [ ] **Step 3：实现 Origin 检查**
 
-In `skills/brainstorming/scripts/server.cjs`, add:
+在 `skills/brainstorming/scripts/server.cjs` 中，添加：
 
 ```js
 function isAllowedWebSocketOrigin(req) {
@@ -224,33 +224,33 @@ function isAllowedWebSocketOrigin(req) {
 }
 ```
 
-Then update `handleUpgrade`:
+然后更新 `handleUpgrade`：
 
 ```js
 function handleUpgrade(req, socket) {
   if (!isAuthorized(req) || !isAllowedWebSocketOrigin(req)) { socket.destroy(); return; }
 ```
 
-- [ ] **Step 4: Verify GREEN**
+- [ ] **Step 4：验证 GREEN**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/prime-rad/superpowers/tests/brainstorm-server
 node auth.test.js
 ```
 
-Expected: auth tests pass; cross-origin WS is rejected; same-origin and direct key WS still open.
+预期：auth 测试通过；跨源 WS 被拒绝；同源和直接 key 的 WS 仍然能打开。
 
-## Task 3: Helper Uses Stored Key For Reconnect
+## Task 3：Helper 使用存储的 key 进行重连
 
-**Files:**
-- Modify: `tests/brainstorm-server/helper.test.js`
-- Modify: `skills/brainstorming/scripts/helper.js`
+**文件：**
+- 修改：`tests/brainstorm-server/helper.test.js`
+- 修改：`skills/brainstorming/scripts/helper.js`
 
-- [ ] **Step 1: Add RED test for WebSocket URL key**
+- [ ] **Step 1：为 WebSocket URL key 添加 RED 测试**
 
-In `tests/brainstorm-server/helper.test.js`, add a mocked-browser test near the reconnect state-machine tests:
+在 `tests/brainstorm-server/helper.test.js` 中，在重连状态机测试附近添加一个 mocked-browser 测试：
 
 ```js
 test('uses sessionStorage key in the WebSocket URL when present', () => {
@@ -261,7 +261,7 @@ test('uses sessionStorage key in the WebSocket URL when present', () => {
 });
 ```
 
-Update `makeEnv()` so the returned object exposes `sockets`, and the mock window includes sessionStorage:
+更新 `makeEnv()`，让返回的对象暴露 `sockets`，并且 mock window 包含 sessionStorage：
 
 ```js
     window: {
@@ -270,7 +270,7 @@ Update `makeEnv()` so the returned object exposes `sockets`, and the mock window
     },
 ```
 
-Also add a fallback test:
+同时添加一个回退测试：
 
 ```js
 test('uses cookie-only WebSocket URL when no sessionStorage key is present', () => {
@@ -281,26 +281,26 @@ test('uses cookie-only WebSocket URL when no sessionStorage key is present', () 
 });
 ```
 
-- [ ] **Step 2: Verify RED**
+- [ ] **Step 2：验证 RED**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/prime-rad/superpowers/tests/brainstorm-server
 node helper.test.js
 ```
 
-Expected: stored-key test fails because current helper uses `ws://localhost:7777`.
+预期：stored-key 测试失败，因为当前 helper 使用 `ws://localhost:7777`。
 
-- [ ] **Step 3: Implement stored-key WS URL**
+- [ ] **Step 3：实现存储 key 的 WS URL**
 
-In `skills/brainstorming/scripts/helper.js`, replace:
+在 `skills/brainstorming/scripts/helper.js` 中，把：
 
 ```js
   const WS_URL = 'ws://' + window.location.host;
 ```
 
-with:
+替换为：
 
 ```js
   function websocketUrl() {
@@ -310,38 +310,38 @@ with:
   }
 ```
 
-Then replace:
+然后把：
 
 ```js
     ws = new WebSocket(WS_URL);
 ```
 
-with:
+替换为：
 
 ```js
     ws = new WebSocket(websocketUrl());
 ```
 
-- [ ] **Step 4: Verify GREEN**
+- [ ] **Step 4：验证 GREEN**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/prime-rad/superpowers/tests/brainstorm-server
 node helper.test.js
 ```
 
-Expected: helper tests pass.
+预期：helper 测试通过。
 
-## Task 4: Security Headers
+## Task 4：安全响应头
 
-**Files:**
-- Modify: `tests/brainstorm-server/auth.test.js`
-- Modify: `skills/brainstorming/scripts/server.cjs`
+**文件：**
+- 修改：`tests/brainstorm-server/auth.test.js`
+- 修改：`skills/brainstorming/scripts/server.cjs`
 
-- [ ] **Step 1: Add RED header tests**
+- [ ] **Step 1：添加 RED header 测试**
 
-In `tests/brainstorm-server/auth.test.js`, add:
+在 `tests/brainstorm-server/auth.test.js` 中，添加：
 
 ```js
     await test('HTML responses include leak-reduction and anti-framing headers', async () => {
@@ -364,20 +364,20 @@ In `tests/brainstorm-server/auth.test.js`, add:
     });
 ```
 
-- [ ] **Step 2: Verify RED**
+- [ ] **Step 2：验证 RED**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/prime-rad/superpowers/tests/brainstorm-server
 node auth.test.js
 ```
 
-Expected: header tests fail because current responses do not include these headers.
+预期：header 测试失败，因为当前响应不包含这些头。
 
-- [ ] **Step 3: Implement shared header helper**
+- [ ] **Step 3：实现共享 header helper**
 
-In `skills/brainstorming/scripts/server.cjs`, add:
+在 `skills/brainstorming/scripts/server.cjs` 中，添加：
 
 ```js
 function securityHeaders(headers = {}) {
@@ -392,7 +392,7 @@ function securityHeaders(headers = {}) {
 }
 ```
 
-Update response writes in `handleRequest`:
+更新 `handleRequest` 中的响应写入：
 
 ```js
 res.writeHead(403, securityHeaders({ 'Content-Type': 'text/html; charset=utf-8' }));
@@ -406,32 +406,32 @@ res.writeHead(200, securityHeaders({ 'Content-Type': 'text/html; charset=utf-8' 
 res.writeHead(200, securityHeaders({ 'Content-Type': contentType }));
 ```
 
-For 404s:
+对于 404：
 
 ```js
 res.writeHead(404, securityHeaders());
 ```
 
-- [ ] **Step 4: Verify GREEN**
+- [ ] **Step 4：验证 GREEN**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/prime-rad/superpowers/tests/brainstorm-server
 node auth.test.js
 ```
 
-Expected: auth tests pass and header assertions are green.
+预期：auth 测试通过且 header 断言为 green。
 
-## Task 5: `/files/*` Realpath Containment
+## Task 5：`/files/*` Realpath 包含检查
 
-**Files:**
-- Modify: `tests/brainstorm-server/server.test.js`
-- Modify: `skills/brainstorming/scripts/server.cjs`
+**文件：**
+- 修改：`tests/brainstorm-server/server.test.js`
+- 修改：`skills/brainstorming/scripts/server.cjs`
 
-- [ ] **Step 1: Add RED symlink escape test**
+- [ ] **Step 1：添加 RED 符号链接逃逸测试**
 
-In `tests/brainstorm-server/server.test.js`, after the `/files/` empty-name test, add:
+在 `tests/brainstorm-server/server.test.js` 中，在 `/files/` 空文件名测试之后添加：
 
 ```js
     await test('does not serve symlinks that escape content dir via /files/', async () => {
@@ -446,20 +446,20 @@ In `tests/brainstorm-server/server.test.js`, after the `/files/` empty-name test
     });
 ```
 
-- [ ] **Step 2: Verify RED**
+- [ ] **Step 2：验证 RED**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/prime-rad/superpowers/tests/brainstorm-server
 node server.test.js
 ```
 
-Expected: symlink test fails because current `/files/*` follows symlinks and serves `server-info`.
+预期：符号链接测试失败，因为当前 `/files/*` 跟随符号链接并返回 `server-info`。
 
-- [ ] **Step 3: Implement containment helper**
+- [ ] **Step 3：实现包含检查 helper**
 
-In `skills/brainstorming/scripts/server.cjs`, add:
+在 `skills/brainstorming/scripts/server.cjs` 中，添加：
 
 ```js
 function isRegularFileInsideContentDir(filePath) {
@@ -477,7 +477,7 @@ function isRegularFileInsideContentDir(filePath) {
 }
 ```
 
-Replace the `/files/*` guard with:
+把 `/files/*` 的守卫替换为：
 
 ```js
     if (!fileName || fileName.startsWith('.') || !isRegularFileInsideContentDir(filePath)) {
@@ -487,27 +487,27 @@ Replace the `/files/*` guard with:
     }
 ```
 
-- [ ] **Step 4: Verify GREEN**
+- [ ] **Step 4：验证 GREEN**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/prime-rad/superpowers/tests/brainstorm-server
 node server.test.js
 ```
 
-Expected: server tests pass, including symlink rejection.
+预期：server 测试通过，包括符号链接拒绝。
 
-## Task 6: Restart Reconnect Regression
+## Task 6：重启重连回归
 
-**Files:**
-- Modify: `tests/brainstorm-server/lifecycle.test.js`
-- Modify: `skills/brainstorming/scripts/server.cjs`
-- Modify: `skills/brainstorming/scripts/helper.js`
+**文件：**
+- 修改：`tests/brainstorm-server/lifecycle.test.js`
+- 修改：`skills/brainstorming/scripts/server.cjs`
+- 修改：`skills/brainstorming/scripts/helper.js`
 
-- [ ] **Step 1: Add RED integration test for same key over WS after restart**
+- [ ] **Step 1：为重启后用同一 key 通过 WS 认证添加 RED 集成测试**
 
-In `tests/brainstorm-server/lifecycle.test.js`, add a test after the port/token persistence test:
+在 `tests/brainstorm-server/lifecycle.test.js` 中，在 port/token 持久化测试之后添加一个测试：
 
 ```js
   await test('stored key can authenticate WebSocket after same-port restart', async () => {
@@ -548,36 +548,36 @@ In `tests/brainstorm-server/lifecycle.test.js`, add a test after the port/token 
   });
 ```
 
-This test may already pass once Tasks 2 and 3 are implemented. If it passes before code changes, keep it as coverage but do not call it RED. The real browser reconnect behavior is primarily covered by Task 3 plus final manual/headless browser verification.
+这个测试在 Task 2 和 Task 3 实现后可能已经通过。如果在代码改动前它就已通过，保留它作为覆盖但不要称之为 RED。真实的浏览器重连行为主要由 Task 3 加上最终的人工/headless 浏览器验证覆盖。
 
-- [ ] **Step 2: Verify behavior**
+- [ ] **Step 2：验证行为**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/prime-rad/superpowers/tests/brainstorm-server
 node lifecycle.test.js
 ```
 
-Expected after Tasks 2 and 3: lifecycle tests pass. If this fails, fix the auth/restart path before continuing.
+预期（在 Task 2 和 Task 3 之后）：lifecycle 测试通过。如果失败，在继续之前修复认证/重启路径。
 
-## Task 7: Lifecycle Hang And Shell Lint
+## Task 7：Lifecycle 挂起与 Shell Lint
 
-**Files:**
-- Modify: `tests/brainstorm-server/lifecycle.test.js`
-- Modify: `skills/brainstorming/scripts/start-server.sh`
-- Modify: `skills/brainstorming/scripts/stop-server.sh`
+**文件：**
+- 修改：`tests/brainstorm-server/lifecycle.test.js`
+- 修改：`skills/brainstorming/scripts/start-server.sh`
+- 修改：`skills/brainstorming/scripts/stop-server.sh`
 
-- [ ] **Step 1: Reproduce shell lint failure**
+- [ ] **Step 1：复现 shell lint 失败**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/prime-rad/superpowers
 scripts/lint-shell.sh skills/brainstorming/scripts/start-server.sh skills/brainstorming/scripts/stop-server.sh tests/brainstorm-server/stop-server.test.sh
 ```
 
-Expected current failure:
+预期的当前失败：
 
 ```text
 SC2164: skills/brainstorming/scripts/start-server.sh line 128: cd "$SCRIPT_DIR"
@@ -585,51 +585,51 @@ SC2034: skills/brainstorming/scripts/start-server.sh line 166: for i in {1..50}
 SC2034: skills/brainstorming/scripts/stop-server.sh line 57: for i in {1..20}
 ```
 
-- [ ] **Step 2: Fix shell lint minimally**
+- [ ] **Step 2：最小化修复 shell lint**
 
-In `skills/brainstorming/scripts/start-server.sh`, change:
+在 `skills/brainstorming/scripts/start-server.sh` 中，把：
 
 ```bash
 cd "$SCRIPT_DIR"
 ```
 
-to:
+改为：
 
 ```bash
 cd "$SCRIPT_DIR" || exit 1
 ```
 
-Change unused loop variables from `i` to `_` where they are not read:
+对于未读取的循环变量，把 `i` 改为 `_`：
 
 ```bash
 for _ in {1..50}; do
 ```
 
-In `skills/brainstorming/scripts/stop-server.sh`, change:
+在 `skills/brainstorming/scripts/stop-server.sh` 中，把：
 
 ```bash
 for i in {1..20}; do
 ```
 
-to:
+改为：
 
 ```bash
 for _ in {1..20}; do
 ```
 
-- [ ] **Step 3: Fix lifecycle start-server hang**
+- [ ] **Step 3：修复 lifecycle start-server 挂起**
 
-In `tests/brainstorm-server/lifecycle.test.js`, update the `start-server.sh --idle-timeout-minutes sets the timeout` test command:
+在 `tests/brainstorm-server/lifecycle.test.js` 中，更新 `start-server.sh --idle-timeout-minutes sets the timeout` 测试命令：
 
 ```js
 const out = execFileSync('bash', [START, '--project-dir', dir, '--idle-timeout-minutes', '5', '--background'], { encoding: 'utf8' });
 ```
 
-This keeps the test from hanging when `CODEX_CI` triggers start-server foreground mode.
+这样当 `CODEX_CI` 触发 start-server 前台模式时，测试不会挂起。
 
-- [ ] **Step 4: Verify lint and lifecycle**
+- [ ] **Step 4：验证 lint 和 lifecycle**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/prime-rad/superpowers
@@ -638,55 +638,55 @@ cd tests/brainstorm-server
 node lifecycle.test.js
 ```
 
-Expected: shell lint exits 0; lifecycle tests exit 0 without hanging.
+预期：shell lint 以 0 退出；lifecycle 测试以 0 退出且不挂起。
 
-## Task 8: Gitignore Durable Companion State
+## Task 8：Gitignore 持久化 Companion 状态
 
-**Files:**
-- Modify: `.gitignore`
+**文件：**
+- 修改：`.gitignore`
 
-- [ ] **Step 1: Verify current ignore gap**
+- [ ] **Step 1：验证当前忽略缺口**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/prime-rad/superpowers
 git check-ignore .superpowers/brainstorm/.last-token || true
 ```
 
-Expected current output: no matching ignore rule.
+预期的当前输出：没有匹配的忽略规则。
 
-- [ ] **Step 2: Add ignore rule**
+- [ ] **Step 2：添加忽略规则**
 
-Add this line to `.gitignore`:
+向 `.gitignore` 添加这一行：
 
 ```gitignore
 .superpowers/
 ```
 
-- [ ] **Step 3: Verify GREEN**
+- [ ] **Step 3：验证 GREEN**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/prime-rad/superpowers
 git check-ignore .superpowers/brainstorm/.last-token
 ```
 
-Expected output:
+预期输出：
 
 ```text
 .superpowers/brainstorm/.last-token
 ```
 
-## Task 9: Full Automated Verification
+## Task 9：完整自动化验证
 
-**Files:**
-- No code changes in this task.
+**文件：**
+- 本任务无代码改动。
 
-- [ ] **Step 1: Run focused suites**
+- [ ] **Step 1：运行聚焦测试套件**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/prime-rad/superpowers/tests/brainstorm-server
@@ -696,90 +696,90 @@ node server.test.js
 node lifecycle.test.js
 ```
 
-Expected: all four commands exit 0.
+预期：全部四条命令以 0 退出。
 
-- [ ] **Step 2: Run full brainstorm-server suite**
+- [ ] **Step 2：运行完整 brainstorm-server 套件**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/prime-rad/superpowers/tests/brainstorm-server
 npm test
 ```
 
-Expected: all tests pass, including ws-protocol, helper, auth, server, lifecycle, and stop-server.
+预期：所有测试通过，包括 ws-protocol、helper、auth、server、lifecycle 和 stop-server。
 
-- [ ] **Step 3: Repeat suite for lifecycle/watch flake**
+- [ ] **Step 3：针对 lifecycle/watch 抖动重复运行套件**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/prime-rad/superpowers/tests/brainstorm-server
 for i in 1 2 3; do npm test || exit 1; done
 ```
 
-Expected: all three repeats pass without hanging.
+预期：三次重复全部通过且不挂起。
 
-- [ ] **Step 4: Run shell lint**
+- [ ] **Step 4：运行 shell lint**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/prime-rad/superpowers
 scripts/lint-shell.sh skills/brainstorming/scripts/start-server.sh skills/brainstorming/scripts/stop-server.sh tests/brainstorm-server/stop-server.test.sh
 ```
 
-Expected: exits 0.
+预期：以 0 退出。
 
-## Task 10: Re-run Security Probes
+## Task 10：重跑安全探测
 
-**Files:**
-- No code changes in this task.
+**文件：**
+- 本任务无代码改动。
 
-- [ ] **Step 1: Recreate the cross-origin attacker probe**
+- [ ] **Step 1：重建跨源攻击者探测**
 
-Use the previous scratch probe if available:
+如果可用，使用之前的临时探测：
 
 ```bash
 node /tmp/superpowers-pr1720-security-drewritter/probe-pr1720.cjs
 ```
 
-If the scratch probe is unavailable, recreate a minimal probe under `/tmp` that:
+如果临时探测不可用，在 `/tmp` 下重建一个最小探测，要求：
 
-- starts the companion with a fixed token
-- loads the keyed URL in headless Chrome
-- starts an attacker page on a different localhost port
-- attempts `new WebSocket('ws://localhost:<companion-port>/')`
-- sends `{"type":"choice","choice":"attacker-injected"}`
-- checks `state/events`
+- 以固定 token 启动 companion
+- 在 headless Chrome 中加载带 key 的 URL
+- 在不同的 localhost 端口上启动攻击者页面
+- 尝试 `new WebSocket('ws://localhost:<companion-port>/')`
+- 发送 `{"type":"choice","choice":"attacker-injected"}`
+- 检查 `state/events`
 
-Expected after fixes:
+修复后的预期：
 
-- keyless and wrong-key HTTP still return 403
-- same-origin helper reaches Connected
-- cross-origin WebSocket does not open
-- `state/events` does not contain `attacker-injected`
-- symlink-to-`server-info` returns 404
-- keyed browser load ends on bare `/`
+- 无 key 和错误 key 的 HTTP 仍然返回 403
+- 同源 helper 到达 Connected
+- 跨源 WebSocket 不会打开
+- `state/events` 不包含 `attacker-injected`
+- 指向 `server-info` 的符号链接返回 404
+- 带 key 的浏览器加载最终落在不带参数的 `/`
 
-- [ ] **Step 2: Re-run manual/browser flow only after automated probes pass**
+- [ ] **Step 2：仅在自动化探测通过后，重跑人工/浏览器流程**
 
-Manual flow:
+人工流程：
 
-1. start the companion with `--project-dir --open`
-2. push a screen
-3. confirm URL strips to `/`
-4. confirm status reaches Connected
-5. click a choice and verify `state/events`
-6. stop and restart same project
-7. verify the open tab reconnects automatically
+1. 用 `--project-dir --open` 启动 companion
+2. 推送一个屏幕
+3. 确认 URL 被剥离为 `/`
+4. 确认状态到达 Connected
+5. 点击一个选项并验证 `state/events`
+6. 停止并重启同一 project
+7. 验证打开的标签页自动重连
 
-Expected: all steps pass without manual URL reload.
+预期：所有步骤通过，无需人工重载 URL。
 
-## Self-Review Checklist
+## 自检清单
 
-- Spec coverage: every design requirement maps to at least one task.
-- Placeholder scan: this plan contains no unresolved placeholder markers or unspecified edge-case steps.
-- TDD order: every production change task starts with a focused failing test or a command that demonstrates the current failure.
-- Trust model: the plan preserves trusted same-origin screen JavaScript and future same-origin vendored libraries.
-- No-commit rule: execution does not commit unless Drew explicitly asks.
+- 规格覆盖：每一项设计要求都映射到至少一个任务。
+- 占位符扫描：本计划不包含任何未解决的占位符标记或未指定的边界情况步骤。
+- TDD 顺序：每个生产改动任务都以一个聚焦的失败测试或一条能演示当前失败的命令开始。
+- 信任模型：本计划保留了可信同源屏幕 JavaScript 和未来同源 vendor 库。
+- 不提交规则：除非 Drew 明确要求，执行期间不提交。

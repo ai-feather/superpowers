@@ -1,158 +1,158 @@
-# Visual Companion Auth Hardening Design
+# Visual Companion 认证加固设计
 
-**Date:** 2026-06-10
-**Status:** Draft for Drew review
+**日期：** 2026-06-10
+**状态：** Draft for Drew review
 
-## Goal
+## 目标
 
-Fix the security and reliability gaps found in PR #1720's brainstorming visual
-companion without changing the companion's core workflow or adding runtime
-dependencies.
+修复在 PR #1720 的 brainstorming 可视化助手中发现的安全性和可靠性
+缺陷，且不改变助手的核心工作流，也不引入运行时
+依赖。
 
-The fixes must be test-first and must leave clear automated evidence for:
+修复必须是测试优先，并留下清晰的自动化证据证明：
 
-- cross-origin browser tabs cannot inject companion events by riding cookies
-- restart reconnect works without depending only on browser cookie behavior
-- bearer keys do not remain in the visible URL after bootstrap
-- `/files/*` cannot serve files outside the content directory
-- future same-origin vendored UI libraries still work
+- 跨源浏览器标签页无法借助 cookie 注入助手事件
+- 重启重连不依赖浏览器 cookie 行为也能工作
+- bearer key 不会在 bootstrap 后留在可见 URL 中
+- `/files/*` 不能提供内容目录之外的文件
+- 未来的同源 vendored UI 库仍然工作
 
-## Threat Model
+## 威胁模型
 
-The companion serves agent-generated local UI for a single brainstorming
-session. The important assets are:
+该助手为单个 brainstorming 会话提供 agent 生成的本地 UI。重要
+资产有：
 
-- screen content served from the companion
-- the session key
-- `state/events`, which the agent reads as user feedback
-- local files under the companion session directory
+- 从助手提供的 screen 内容
+- 会话 key
+- `state/events`，agent 把它作为用户反馈读取
+- 助手会话目录下的本地文件
 
-In scope attackers:
+范围内的攻击者：
 
-- a malicious browser tab on another `localhost` port
-- a browser page that can make requests to the companion but should not be able
-  to authenticate as the companion UI
-- a direct remote client when the server is bound to a non-loopback interface
-- accidental leakage through URL history, referrers, or committed local state
-- content-directory symlinks or path tricks that escape `/files/*`
+- 另一个 `localhost` 端口上的恶意浏览器标签页
+- 一个可以向助手发起请求、但不应能
+  作为助手 UI 通过认证的浏览器页面
+- 当服务器绑定到非环回接口时的直接远程客户端
+- 通过 URL 历史、referrer 或已提交的本地状态的意外泄露
+- content 目录的符号链接或逃逸 `/files/*` 的路径伎俩
 
-Out of scope for this fix:
+本次修复范围之外：
 
-- malicious agent-authored screen HTML
-- malicious same-origin vendored JavaScript loaded by a companion screen
+- 恶意的 agent 编写的 screen HTML
+- 由 companion screen 加载的恶意同源 vendored JavaScript
 
-This out-of-scope boundary is intentional. Companion screens are part of the
-agent UI surface. They may use inline scripts today and may someday use
-same-origin vendored libraries such as Alpine or Three.js. Protecting against
-malicious screen HTML would require a larger sandboxed-iframe architecture with
-a narrow message bridge; that is not the scope of this PR hardening pass.
+这个范围外边界是有意为之。Companion screen 是 agent UI
+面的一部分。它们今天可能使用内联脚本，将来某天可能
+使用同源 vendored 库，比如 Alpine 或 Three.js。防范
+恶意 screen HTML 需要一个更大的沙箱化 iframe 架构，带
+一个狭窄的消息桥；那不是本 PR 加固轮次的范围。
 
-## Current Failures
+## 当前缺陷
 
-Automated and headed-browser testing found these failures in the PR branch:
+自动化和有头浏览器测试在 PR 分支中发现了这些缺陷：
 
-1. A cross-origin localhost page can open a cookie-authenticated WebSocket and
-   write attacker-controlled choices to `state/events` after the real companion
-   page sets the cookie.
-2. `/files/*` serves symlinks that point outside `content/`, including a symlink
-   to `state/server-info` containing the keyed URL.
-3. The session key remains in the URL of the actual screen page, so same-origin
-   screen JavaScript and accidental referrers/history can see it.
-4. The helper reconnects with a keyless `ws://host` URL. In headed Chrome, after
-   a same-port/same-token restart, the browser stopped presenting the cookie to
-   the restarted server, so the open tab stayed stuck on the tombstone until a
-   manual reload.
-5. Shell lint and the lifecycle test need cleanup so the test pass is stable in
-   Codex.
+1. 一个跨源 localhost 页面可以打开一个通过 cookie 认证的 WebSocket，并
+   在真实 companion 页面设置 cookie 之后向 `state/events`
+   写入攻击者控制的选择。
+2. `/files/*` 提供指向 `content/` 之外的符号链接，包括一个
+   指向包含 keyed URL 的 `state/server-info` 的符号链接。
+3. 会话 key 仍留在实际 screen 页面的 URL 中，因此同源
+   screen JavaScript 以及意外的 referrer/历史可以看到它。
+4. helper 用一个无 key 的 `ws://host` URL 重连。在有头 Chrome 中，
+   在同端口/同 token 重启后，浏览器停止向
+   重启后的服务器出示 cookie，因此打开的标签页一直卡在
+   tombstone 上，直到手动 reload。
+5. Shell lint 和生命周期测试需要清理，以便测试通过在
+   Codex 中保持稳定。
 
-## Design
+## 设计
 
-### 1. Bootstrap Keyed Loads
+### 1. 带 key 的 Bootstrap 加载
 
-`GET /?key=<token>` becomes a bootstrap response, not the screen response.
+`GET /?key=<token>` 变成一个 bootstrap 响应，而不是 screen 响应。
 
-When the key is valid, the server:
+当 key 有效时，服务器：
 
-1. sets the HttpOnly session cookie as it does today
-2. returns a small HTML bootstrap page
-3. the bootstrap page stores the key in tab-scoped `sessionStorage`
-4. the bootstrap page navigates to `/` using `location.replace('/')`
+1. 像今天一样设置 HttpOnly 会话 cookie
+2. 返回一个小的 HTML bootstrap 页面
+3. bootstrap 页面把 key 存储在标签页作用域的 `sessionStorage` 中
+4. bootstrap 页面使用 `location.replace('/')` 导航到 `/`
 
-After this, the visible screen URL is bare `/`, not `/?key=...`.
+此后，可见的 screen URL 是裸 `/`，而不是 `/?key=...`。
 
-`GET /` with a valid cookie serves the current screen. `GET /` without a valid
-cookie still returns the friendly 403 page. `GET /?key=<wrong>` returns 403.
+带有效 cookie 的 `GET /` 提供当前 screen。没有有效
+cookie 的 `GET /` 仍返回友好的 403 页面。`GET /?key=<wrong>` 返回 403。
 
-Why `sessionStorage`: the helper needs a reconnect credential that survives
-same-port restarts and does not depend only on cookie behavior. Because screen
-HTML is trusted same-origin UI, storing the key in tab-scoped storage is
-acceptable for this threat model. It is materially better than leaving the key
-in the address bar, history, and referrer surface.
+为什么用 `sessionStorage`：helper 需要一个能扛过
+同端口重启、且不依赖 cookie 行为的重连凭据。由于 screen
+HTML 是受信任的同源 UI，把 key 存在标签页作用域存储中
+对这个威胁模型是可接受的。它实质上比把 key 留在
+地址栏、历史和 referrer 面要好。
 
-### 2. WebSocket Same-Origin Enforcement
+### 2. WebSocket 同源强制
 
-WebSocket upgrades must pass both checks:
+WebSocket 升级必须通过两项检查：
 
-1. valid session auth by query key or cookie
-2. if an `Origin` header is present, it must match the request target origin
+1. 通过 query key 或 cookie 的有效会话认证
+2. 如果存在 `Origin` 头，它必须匹配请求目标源
 
-The origin check should compare:
+源检查应比较：
 
 ```text
 Origin === "http://" + req.headers.host
 ```
 
-Browser attacker page example:
+浏览器攻击者页面示例：
 
 ```text
 Origin: http://localhost:9999
 Host: localhost:58088
 ```
 
-This must be rejected even if the browser sends the companion cookie.
+即使浏览器发送了 companion cookie，这也必须被拒绝。
 
-Legitimate companion page example:
+合法的 companion 页面示例：
 
 ```text
 Origin: http://localhost:58088
 Host: localhost:58088
 ```
 
-This should be accepted when the key or cookie is valid.
+当 key 或 cookie 有效时，这应当被接受。
 
-Direct non-browser clients may omit `Origin`; they still need the session key.
+直接的非浏览器客户端可能省略 `Origin`；它们仍然需要会话 key。
 
-### 3. Helper Reconnect Credential
+### 3. Helper 重连凭据
 
-`helper.js` should read the tab-scoped key from `sessionStorage` and append it
-to the WebSocket URL:
+`helper.js` 应从 `sessionStorage` 读取标签页作用域的 key，并把它附加到
+WebSocket URL：
 
 ```text
 ws://<host>/?key=<stored-key>
 ```
 
-If no stored key exists, the helper falls back to the current cookie-only
-`ws://<host>` behavior. This preserves compatibility for already-loaded pages
-that do have a valid cookie but no storage entry.
+如果不存在已存储的 key，helper 回退到当前仅依赖 cookie 的
+`ws://<host>` 行为。这为已加载的、确实有有效 cookie 但没有
+存储项的页面保留兼容性。
 
-### 4. `/files/*` Containment
+### 4. `/files/*` 围堵
 
-The file server should continue to reject empty names and dotfiles. It must also
-ensure the file is a real regular file inside `CONTENT_DIR`.
+文件服务器应继续拒绝空名称和 dotfile。它还必须
+确保文件是 `CONTENT_DIR` 内的真实常规文件。
 
-Use realpath containment as the boundary:
+使用 realpath 围堵作为边界：
 
-- compute `realContentDir = fs.realpathSync(CONTENT_DIR)`
-- compute `realFilePath = fs.realpathSync(filePath)`
-- serve only when `realFilePath` equals a descendant of `realContentDir`
-- reject symlinks and anything outside the content directory with 404
+- 计算 `realContentDir = fs.realpathSync(CONTENT_DIR)`
+- 计算 `realFilePath = fs.realpathSync(filePath)`
+- 仅当 `realFilePath` 等于 `realContentDir` 的后代时才提供
+- 对符号链接和内容目录之外的任何内容以 404 拒绝
 
-The server should keep using `path.basename` so nested paths remain unsupported.
+服务器应继续使用 `path.basename`，以便嵌套路径仍然不被支持。
 
-### 5. Leak-Reduction Headers
+### 5. 减少泄露的头
 
-Add conservative headers that do not block inline scripts or future same-origin
-vendored libraries:
+添加保守的头，既不阻塞内联脚本，也不阻塞未来同源
+vendored 库：
 
 ```text
 Referrer-Policy: no-referrer
@@ -162,64 +162,65 @@ Content-Security-Policy: frame-ancestors 'none'
 Cross-Origin-Resource-Policy: same-origin
 ```
 
-Do not add a restrictive `script-src` CSP in this pass. The companion currently
-injects inline helper JavaScript and future screens may load same-origin
-vendored libraries.
+在本次中不要添加限制性的 `script-src` CSP。companion 当前
+注入内联 helper JavaScript，且未来的 screen 可能加载同源
+vendored 库。
 
-### 6. Gitignore Durable Session State
+### 6. 将持久会话状态加入 Gitignore
 
-Add `.superpowers/` to the repo root `.gitignore` so persisted companion state
-and `.last-token` are not accidentally committed when using `--project-dir`.
+把 `.superpowers/` 加入仓库根的 `.gitignore`，以便在使用 `--project-dir` 时，
+持久化的 companion 状态和 `.last-token` 不会
+被意外提交。
 
-### 7. Test Stability And Lint
+### 7. 测试稳定性与 lint
 
-Clean up shell lint warnings in the touched start/stop scripts.
+清理所触及的 start/stop 脚本中的 shell lint 警告。
 
-Update the lifecycle test that invokes `start-server.sh --idle-timeout-minutes`
-so it cannot hang under Codex's `CODEX_CI` foreground auto-detection. The test
-should force background mode with `--background` when it expects the script to
-return startup JSON.
+更新调用 `start-server.sh --idle-timeout-minutes`
+的生命周期测试，使其不会在 Codex 的 `CODEX_CI` 前台自动检测下挂起。该测试
+在期望脚本返回启动 JSON 时应使用 `--background` 强制后台
+模式。
 
-## Testing Strategy
+## 测试策略
 
-All behavior changes should be TDD:
+所有行为变更都应是 TDD：
 
-1. write the failing focused test
-2. run it and confirm it fails for the expected reason
-3. implement the minimum fix
-4. rerun the focused test
-5. rerun the full brainstorm-server suite
+1. 编写失败的聚焦测试
+2. 运行它并确认它因预期原因失败
+3. 实现最小修复
+4. 重新运行聚焦测试
+5. 重新运行完整的 brainstorm-server 套件
 
-Required focused regressions:
+必需的聚焦回归测试：
 
-- valid keyed `/` returns bootstrap, not screen content
-- bootstrap stores key in `sessionStorage` and strips the URL
-- cookie-only `/` still serves screen content
-- helper uses `sessionStorage` key for WebSocket URL
-- same-origin cookie WebSocket opens
-- cross-origin cookie WebSocket is rejected and writes no events
-- direct key WebSocket still opens without `Origin`
-- symlink under `content/` pointing to `state/server-info` returns 404
-- security headers are present on normal HTML, bootstrap, 403, and file responses
-- restart same port/token can authenticate reconnect with the stored key
-- shell lint passes for touched shell scripts
-- lifecycle suite does not hang under Codex
+- 带有效 key 的 `/` 返回 bootstrap，而不是 screen 内容
+- bootstrap 把 key 存入 `sessionStorage` 并剥离 URL
+- 仅 cookie 的 `/` 仍提供 screen 内容
+- helper 为 WebSocket URL 使用 `sessionStorage` key
+- 同源 cookie WebSocket 能打开
+- 跨源 cookie WebSocket 被拒绝且不写任何事件
+- 直接 key WebSocket 在没有 `Origin` 时仍能打开
+- `content/` 下指向 `state/server-info` 的符号链接返回 404
+- 安全头出现在正常 HTML、bootstrap、403 和文件响应上
+- 同端口/token 重启能用存储的 key 认证重连
+- shell lint 对触及的 shell 脚本通过
+- 生命周期套件在 Codex 下不挂起
 
-## Acceptance Criteria
+## 验收标准
 
-- `cd tests/brainstorm-server && npm test` passes repeatedly without hanging.
-- The security probe that previously wrote `attacker-injected` from another
-  localhost origin now fails to open the WebSocket and leaves `state/events`
-  unchanged.
-- The symlink-to-`server-info` probe returns 404.
-- A headed or headless browser keyed load ends on a bare `/` URL and the status
-  pill reaches Connected.
-- A same-port/same-token restart reconnects automatically without manual reload.
-- `scripts/lint-shell.sh` passes for the touched shell scripts.
+- `cd tests/brainstorm-server && npm test` 反复运行通过且不挂起。
+- 之前从另一个
+  localhost 源写入 `attacker-injected` 的安全探测，现在无法打开 WebSocket 并保持 `state/events`
+  不变。
+- 指向 `server-info` 的符号链接探测返回 404。
+- 有头或无头浏览器的带 key 加载最终落在裸 `/` URL 上，并且状态
+  胶囊到达 Connected。
+- 同端口/同 token 重启自动重连，无需手动 reload。
+- `scripts/lint-shell.sh` 对触及的 shell 脚本通过。
 
-## Deferred Work
+## 推迟的工作
 
-If the project later needs to treat screen HTML as untrusted, design a separate
-sandboxed iframe architecture. That should isolate generated screens on a
-separate origin or sandboxed frame and expose only a narrow `postMessage` bridge
-for user choices. Do not bundle that into this fix.
+如果项目后来需要把 screen HTML 视为不受信任，请设计一个单独的
+沙箱化 iframe 架构。那应该把生成的 screen 隔离在
+单独的源或沙箱化的 frame 上，并仅暴露一个狭窄的 `postMessage` 桥
+用于用户选择。不要把那并入本次修复。

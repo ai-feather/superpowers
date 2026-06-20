@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Stop the brainstorm server and clean up
-# Usage: stop-server.sh <session_dir>
+# 停止 brainstorm 服务器并清理
+# 用法：stop-server.sh <session_dir>
 #
-# Kills the server process. Only deletes session directory if it's
-# under /tmp (ephemeral). Persistent directories (.superpowers/) are
-# kept so mockups can be reviewed later.
+# 杀掉服务器进程。仅当会话目录位于 /tmp（临时）下时才删除它。
+# 持久化目录（.superpowers/）会被保留，以便日后查看模型。
 
 SESSION_DIR="$1"
 
@@ -60,8 +59,8 @@ command_has_server_id() {
   esac
 }
 
-# Confirm a PID has this session's per-start instance id, not just a familiar
-# process name. Ambiguous or legacy metadata fails closed as stale_pid.
+# 确认某个 PID 持有本会话本次启动的实例 id，而不仅仅是一个眼熟的进程名。
+# 含糊或遗留的元数据会以 stale_pid 安全失败（fail closed）。
 is_brainstorm_server() {
   kill -0 "$1" 2>/dev/null || return 1
   local expected_id
@@ -73,8 +72,8 @@ is_brainstorm_server() {
 if [[ -f "$PID_FILE" ]]; then
   pid=$(cat "$PID_FILE")
 
-  # Refuse to signal a PID we can't prove is our server. A stale pid file may
-  # point at an unrelated process after a reboot/PID wraparound.
+  # 拒绝向一个我们无法证明是本服务器的 PID 发送信号。一个陈旧的 pid 文件
+  # 可能在重启/PID 回绕之后指向一个无关进程。
   if ! is_brainstorm_server "$pid"; then
     rm -f "$PID_FILE" "$SERVER_ID_FILE"
     mark_stopped "stale_pid"
@@ -82,10 +81,10 @@ if [[ -f "$PID_FILE" ]]; then
     exit 0
   fi
 
-  # Try to stop gracefully, fallback to force if still alive
+  # 尝试优雅停止，若仍存活则回退到强制
   kill "$pid" 2>/dev/null || true
 
-  # Wait for graceful shutdown (up to ~2s)
+  # 等待优雅关闭（最多约 2 秒）
   for _ in {1..20}; do
     if ! kill -0 "$pid" 2>/dev/null; then
       break
@@ -93,11 +92,11 @@ if [[ -f "$PID_FILE" ]]; then
     sleep 0.1
   done
 
-  # If still running, escalate to SIGKILL
+  # 如果仍在运行，升级到 SIGKILL
   if kill -0 "$pid" 2>/dev/null; then
     kill -9 "$pid" 2>/dev/null || true
 
-    # Give SIGKILL a moment to take effect
+    # 给 SIGKILL 一点时间生效
     sleep 0.1
   fi
 
@@ -109,7 +108,7 @@ if [[ -f "$PID_FILE" ]]; then
   rm -f "$PID_FILE" "$SERVER_ID_FILE" "${STATE_DIR}/server.log"
   mark_stopped "stop-server.sh"
 
-  # Only delete ephemeral /tmp directories
+  # 仅删除临时的 /tmp 目录
   if [[ "$SESSION_DIR" == /tmp/* ]]; then
     rm -rf "$SESSION_DIR"
   fi

@@ -1,36 +1,36 @@
-# Document Review System Implementation Plan
+# 文档评审系统实现计划
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan.
+> **致代理工作者：** 必需：使用 superpowers:subagent-driven-development（若子代理可用）或 superpowers:executing-plans 来实现本计划。
 
-**Goal:** Add spec and plan document review loops to the brainstorming and writing-plans skills.
+**目标：** 为 brainstorming 和 writing-plans 技能添加 spec 与 plan 文档的评审循环。
 
-**Architecture:** Create reviewer prompt templates in each skill directory. Modify skill files to add review loops after document creation. Use Task tool with general-purpose subagent for reviewer dispatch.
+**架构：** 在每个技能目录中创建评审者提示模板。修改技能文件，在文档创建后加入评审循环。使用 Task 工具配合 general-purpose 子代理来调度评审者。
 
-**Tech Stack:** Markdown skill files, subagent dispatch via Task tool
+**技术栈：** Markdown 技能文件、通过 Task 工具调度子代理
 
-**Spec:** docs/superpowers/specs/2026-01-22-document-review-system-design.md
+**规格：** docs/superpowers/specs/2026-01-22-document-review-system-design.md
 
 ---
 
-## Chunk 1: Spec Document Reviewer
+## Chunk 1: Spec 文档评审者
 
-This chunk adds the spec document reviewer to the brainstorming skill.
+本块为 brainstorming 技能添加 spec 文档评审者。
 
-### Task 1: Create Spec Document Reviewer Prompt Template
+### Task 1: 创建 Spec 文档评审者提示模板
 
-**Files:**
-- Create: `skills/brainstorming/spec-document-reviewer-prompt.md`
+**文件：**
+- 创建：`skills/brainstorming/spec-document-reviewer-prompt.md`
 
-- [ ] **Step 1:** Create the reviewer prompt template file
+- [ ] **Step 1:** 创建评审者提示模板文件
 
 ```markdown
 # Spec Document Reviewer Prompt Template
 
-Use this template when dispatching a spec document reviewer subagent.
+在调度 spec 文档评审者子代理时使用此模板。
 
-**Purpose:** Verify the spec is complete, consistent, and ready for implementation planning.
+**目的：** 验证 spec 是否完整、一致，并且已准备好进入实现规划阶段。
 
-**Dispatch after:** Spec document is written to docs/superpowers/specs/
+**调度时机：** Spec 文档被写入 docs/superpowers/specs/ 之后
 
 ```
 Task tool (general-purpose):
@@ -70,15 +70,15 @@ Task tool (general-purpose):
     - [suggestions that don't block approval]
 ```
 
-**Reviewer returns:** Status, Issues (if any), Recommendations
+**评审者返回：** Status、Issues（若有）、Recommendations
 ```
 
-- [ ] **Step 2:** Verify the file was created correctly
+- [ ] **Step 2:** 验证文件已正确创建
 
-Run: `cat skills/brainstorming/spec-document-reviewer-prompt.md | head -20`
-Expected: Shows the header and purpose section
+运行：`cat skills/brainstorming/spec-document-reviewer-prompt.md | head -20`
+预期：显示标题和目的部分
 
-- [ ] **Step 3:** Commit
+- [ ] **Step 3:** 提交
 
 ```bash
 git add skills/brainstorming/spec-document-reviewer-prompt.md
@@ -87,18 +87,18 @@ git commit -m "feat: add spec document reviewer prompt template"
 
 ---
 
-### Task 2: Add Review Loop to Brainstorming Skill
+### Task 2: 在 brainstorming 技能中添加评审循环
 
-**Files:**
-- Modify: `skills/brainstorming/SKILL.md`
+**文件：**
+- 修改：`skills/brainstorming/SKILL.md`
 
-- [ ] **Step 1:** Read the current brainstorming skill
+- [ ] **Step 1:** 读取当前 brainstorming 技能
 
-Run: `cat skills/brainstorming/SKILL.md`
+运行：`cat skills/brainstorming/SKILL.md`
 
-- [ ] **Step 2:** Add the review loop section after "After the Design"
+- [ ] **Step 2:** 在"After the Design"之后添加评审循环部分
 
-Find the "After the Design" section and add a new "Spec Review Loop" section after documentation but before implementation:
+找到"After the Design"部分，在文档之后、实现之前新增一个"Spec Review Loop"部分：
 
 ```markdown
 **Spec Review Loop:**
@@ -116,12 +116,12 @@ After writing the spec document:
 - Reviewers are advisory - explain disagreements if you believe feedback is incorrect
 ```
 
-- [ ] **Step 3:** Verify the changes
+- [ ] **Step 3:** 验证改动
 
-Run: `grep -A 15 "Spec Review Loop" skills/brainstorming/SKILL.md`
-Expected: Shows the new review loop section
+运行：`grep -A 15 "Spec Review Loop" skills/brainstorming/SKILL.md`
+预期：显示新的评审循环部分
 
-- [ ] **Step 4:** Commit
+- [ ] **Step 4:** 提交
 
 ```bash
 git add skills/brainstorming/SKILL.md
@@ -130,25 +130,25 @@ git commit -m "feat: add spec review loop to brainstorming skill"
 
 ---
 
-## Chunk 2: Plan Document Reviewer
+## Chunk 2: Plan 文档评审者
 
-This chunk adds the plan document reviewer to the writing-plans skill.
+本块为 writing-plans 技能添加 plan 文档评审者。
 
-### Task 3: Create Plan Document Reviewer Prompt Template
+### Task 3: 创建 Plan 文档评审者提示模板
 
-**Files:**
-- Create: `skills/writing-plans/plan-document-reviewer-prompt.md`
+**文件：**
+- 创建：`skills/writing-plans/plan-document-reviewer-prompt.md`
 
-- [ ] **Step 1:** Create the reviewer prompt template file
+- [ ] **Step 1:** 创建评审者提示模板文件
 
 ```markdown
 # Plan Document Reviewer Prompt Template
 
-Use this template when dispatching a plan document reviewer subagent.
+在调度 plan 文档评审者子代理时使用此模板。
 
-**Purpose:** Verify the plan chunk is complete, matches the spec, and has proper task decomposition.
+**目的：** 验证 plan 的某个 chunk 是否完整、与 spec 一致，并且任务拆分合理。
 
-**Dispatch after:** Each plan chunk is written
+**调度时机：** 每个 plan chunk 写完之后
 
 ```
 Task tool (general-purpose):
@@ -190,15 +190,15 @@ Task tool (general-purpose):
     - [suggestions that don't block approval]
 ```
 
-**Reviewer returns:** Status, Issues (if any), Recommendations
+**评审者返回：** Status、Issues（若有）、Recommendations
 ```
 
-- [ ] **Step 2:** Verify the file was created
+- [ ] **Step 2:** 验证文件已创建
 
-Run: `cat skills/writing-plans/plan-document-reviewer-prompt.md | head -20`
-Expected: Shows the header and purpose section
+运行：`cat skills/writing-plans/plan-document-reviewer-prompt.md | head -20`
+预期：显示标题和目的部分
 
-- [ ] **Step 3:** Commit
+- [ ] **Step 3:** 提交
 
 ```bash
 git add skills/writing-plans/plan-document-reviewer-prompt.md
@@ -207,18 +207,18 @@ git commit -m "feat: add plan document reviewer prompt template"
 
 ---
 
-### Task 4: Add Review Loop to Writing-Plans Skill
+### Task 4: 在 writing-plans 技能中添加评审循环
 
-**Files:**
-- Modify: `skills/writing-plans/SKILL.md`
+**文件：**
+- 修改：`skills/writing-plans/SKILL.md`
 
-- [ ] **Step 1:** Read current skill file
+- [ ] **Step 1:** 读取当前技能文件
 
-Run: `cat skills/writing-plans/SKILL.md`
+运行：`cat skills/writing-plans/SKILL.md`
 
-- [ ] **Step 2:** Add chunk-by-chunk review section
+- [ ] **Step 2:** 添加按 chunk 评审的部分
 
-Add before the "Execution Handoff" section:
+在"Execution Handoff"部分之前添加：
 
 ```markdown
 ## Plan Review Loop
@@ -236,9 +236,9 @@ After completing each chunk of the plan:
 **Chunk boundaries:** Use `## Chunk N: <name>` headings to delimit chunks. Each chunk should be ≤1000 lines and logically self-contained.
 ```
 
-- [ ] **Step 3:** Update task syntax examples to use checkboxes
+- [ ] **Step 3:** 更新任务语法示例以使用复选框
 
-Change the Task Structure section to show checkbox syntax:
+将 Task Structure 部分改为展示复选框语法：
 
 ```markdown
 ### Task N: [Component Name]
@@ -248,17 +248,17 @@ Change the Task Structure section to show checkbox syntax:
   ...
 ```
 
-- [ ] **Step 4:** Verify the review loop section was added
+- [ ] **Step 4:** 验证评审循环部分已添加
 
-Run: `grep -A 15 "Plan Review Loop" skills/writing-plans/SKILL.md`
-Expected: Shows the new review loop section
+运行：`grep -A 15 "Plan Review Loop" skills/writing-plans/SKILL.md`
+预期：显示新的评审循环部分
 
-- [ ] **Step 5:** Verify the task syntax examples were updated
+- [ ] **Step 5:** 验证任务语法示例已更新
 
-Run: `grep -A 5 "Task N:" skills/writing-plans/SKILL.md`
-Expected: Shows checkbox syntax `### Task N:`
+运行：`grep -A 5 "Task N:" skills/writing-plans/SKILL.md`
+预期：显示复选框语法 `### Task N:`
 
-- [ ] **Step 6:** Commit
+- [ ] **Step 6:** 提交
 
 ```bash
 git add skills/writing-plans/SKILL.md
@@ -267,33 +267,33 @@ git commit -m "feat: add plan review loop and checkbox syntax to writing-plans s
 
 ---
 
-## Chunk 3: Update Plan Document Header
+## Chunk 3: 更新 Plan 文档头部
 
-This chunk updates the plan document header template to reference the new checkbox syntax requirements.
+本块更新 plan 文档头部模板，使其引用新的复选框语法要求。
 
-### Task 5: Update Plan Header Template in Writing-Plans Skill
+### Task 5: 在 writing-plans 技能中更新 Plan 头部模板
 
-**Files:**
-- Modify: `skills/writing-plans/SKILL.md`
+**文件：**
+- 修改：`skills/writing-plans/SKILL.md`
 
-- [ ] **Step 1:** Read current plan header template
+- [ ] **Step 1:** 读取当前 plan 头部模板
 
-Run: `grep -A 20 "Plan Document Header" skills/writing-plans/SKILL.md`
+运行：`grep -A 20 "Plan Document Header" skills/writing-plans/SKILL.md`
 
-- [ ] **Step 2:** Update the header template to reference checkbox syntax
+- [ ] **Step 2:** 更新头部模板以引用复选框语法
 
-The plan header should note that tasks and steps use checkbox syntax. Update the header comment:
+plan 头部应注明任务和步骤使用复选框语法。更新头部注释：
 
 ```markdown
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Tasks and steps use checkbox (`- [ ]`) syntax for tracking.
 ```
 
-- [ ] **Step 3:** Verify the change
+- [ ] **Step 3:** 验证改动
 
-Run: `grep -A 5 "For agentic workers:" skills/writing-plans/SKILL.md`
-Expected: Shows updated header with checkbox syntax mention
+运行：`grep -A 5 "For agentic workers:" skills/writing-plans/SKILL.md`
+预期：显示已更新、提及复选框语法的头部
 
-- [ ] **Step 4:** Commit
+- [ ] **Step 4:** 提交
 
 ```bash
 git add skills/writing-plans/SKILL.md

@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
-# Resolve and ensure the working-tree directory SDD uses for its short-lived
-# artifacts: task briefs, implementer reports, review packages, and the
-# progress ledger. Print the directory's absolute path.
+# 解析并确保 SDD 用于其短命产物的工作树目录：任务简报、实现者报告、
+# 评审包，以及进度账本。打印该目录的绝对路径。
 #
-# The workspace lives in the working tree (not under .git/) because Claude Code
-# treats .git/ as a protected path and denies agent writes there — which blocks
-# an implementer subagent from writing its report file. A self-ignoring
-# .gitignore keeps the workspace out of `git status` and out of accidental
-# commits without modifying any tracked file.
+# 该工作区位于工作树中（而非 .git/ 下），因为 Claude Code 把 .git/ 视为
+# 受保护路径并拒绝代理在那里写入——那会阻止实现者子代理写它的报告文件。
+# 一个自忽略的 .gitignore 让工作区不出现在 `git status` 里，也不会被
+# 意外提交，且不修改任何被跟踪的文件。
 #
-# Single source of truth for the workspace location, so task-brief and
-# review-package cannot drift to different directories.
+# 工作区位置的唯一真相来源，这样 task-brief 和 review-package 不会
+# 漂移到不同的目录。
 #
-# Usage: sdd-workspace
+# 用法：sdd-workspace
 set -euo pipefail
 
 root=$(git rev-parse --show-toplevel)

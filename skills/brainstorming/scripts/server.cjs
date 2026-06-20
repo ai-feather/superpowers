@@ -3,7 +3,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-// ========== WebSocket Protocol (RFC 6455) ==========
+// ========== WebSocket 协议（RFC 6455） ==========
 
 const OPCODES = { TEXT: 0x01, CLOSE: 0x08, PING: 0x09, PONG: 0x0A };
 const WS_MAGIC = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
@@ -84,15 +84,15 @@ function decodeFrame(buffer) {
 
 const PORT_FILE = process.env.BRAINSTORM_PORT_FILE || null;
 const randomPort = () => 49152 + Math.floor(Math.random() * 16383);
-// Prefer an explicit port, else the port this session last bound (so a restart
-// reuses it and an already-open browser tab reconnects), else a random high port.
+// 优先使用显式指定的端口，否则用本会话上次绑定的端口（这样重启会复用它，
+// 已经打开的浏览器标签页会重连），否则用一个随机高位端口。
 function preferredPort() {
   if (process.env.BRAINSTORM_PORT) return Number(process.env.BRAINSTORM_PORT);
   if (PORT_FILE) {
     try {
       const p = Number(fs.readFileSync(PORT_FILE, 'utf-8').trim());
       if (Number.isInteger(p) && p > 1023 && p < 65536) return p;
-    } catch (e) { /* no prior port recorded */ }
+    } catch (e) { /* 没有记录过之前的端口 */ }
   }
   return randomPort();
 }
@@ -112,21 +112,20 @@ const TELEMETRY_DISABLE_ENV_VARS = [
 const SUPERPOWERS_TELEMETRY_DISABLED = TELEMETRY_DISABLE_ENV_VARS.some(name => isTruthyEnv(process.env[name]));
 let ownerPid = process.env.BRAINSTORM_OWNER_PID ? Number(process.env.BRAINSTORM_OWNER_PID) : null;
 
-// Per-session secret key. The companion is reachable by any local browser tab
-// and, when bound to a non-loopback host, by any host that can route to it.
-// The key authenticates the real client uniformly across loopback, tunnel, and
-// remote binds — and defeats DNS rebinding — where a Host/Origin allowlist
-// cannot. It rides the served URL as ?key= and is mirrored into a cookie on
-// first load so same-origin subresources and the WebSocket carry it for free.
-// Persisted alongside the port (BRAINSTORM_TOKEN_FILE) so a restart keeps the
-// same key and an already-open tab's cookie still validates.
+// 每会话密钥。该伴侣可被任何本地浏览器标签页访问；当绑定到非回环主机时，
+// 可被任何能路由到它的主机访问。该密钥在回环、隧道和远程绑定之间统一地
+// 认证真实客户端——并且能挫败 DNS 重绑定——这是 Host/Origin 白名单做不到的。
+// 它作为 ?key= 附在提供的 URL 上，并在首次加载时镜像写入一个 cookie，这样
+// 同源子资源和 WebSocket 就免费带上它。它与端口一起持久化
+// （BRAINSTORM_TOKEN_FILE），以便重启时保留同一个密钥，已打开标签页的
+// cookie 仍然有效。
 const TOKEN_FILE = process.env.BRAINSTORM_TOKEN_FILE || null;
 function generateToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
 function chmodOwnerOnly(file) {
-  try { fs.chmodSync(file, 0o600); } catch (e) { /* best effort */ }
+  try { fs.chmodSync(file, 0o600); } catch (e) { /* 尽力而为 */ }
 }
 
 function initialToken() {
@@ -140,7 +139,7 @@ function initialToken() {
         chmodOwnerOnly(TOKEN_FILE);
         return { value: t, source: 'file' };
       }
-    } catch (e) { /* no prior token recorded */ }
+    } catch (e) { /* 没有记录过之前的 token */ }
   }
   return { value: generateToken(), source: 'generated' };
 }
@@ -148,7 +147,7 @@ function initialToken() {
 const tokenInfo = initialToken();
 let TOKEN = tokenInfo.value;
 let tokenSource = tokenInfo.source;
-let COOKIE_NAME = 'brainstorm-key-' + PORT; // refined to the actual bound port in onListen
+let COOKIE_NAME = 'brainstorm-key-' + PORT; // 在 onListen 中精化为实际绑定的端口
 
 const MIME_TYPES = {
   '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
@@ -156,7 +155,7 @@ const MIME_TYPES = {
   '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.svg': 'image/svg+xml'
 };
 
-// ========== Templates and Constants ==========
+// ========== 模板与常量 ==========
 
 function waitingPage() {
   return renderBranding(`<!DOCTYPE html>
@@ -203,7 +202,7 @@ const frameTemplate = fs.readFileSync(path.join(__dirname, 'frame-template.html'
 const helperScript = fs.readFileSync(path.join(__dirname, 'helper.js'), 'utf-8');
 const helperInjection = '<script>\n' + helperScript + '\n</script>';
 
-// ========== Helper Functions ==========
+// ========== 辅助函数 ==========
 
 function readSuperpowersVersion() {
   const root = path.join(__dirname, '../../..');
@@ -217,7 +216,7 @@ function readSuperpowersVersion() {
       const data = JSON.parse(fs.readFileSync(manifest, 'utf-8'));
       if (data.version) return String(data.version);
     } catch (e) {
-      // Packaged Codex plugins omit package.json; try the next manifest.
+      // 打包的 Codex 插件不含 package.json；尝试下一个清单文件。
     }
   }
 
@@ -336,8 +335,8 @@ function parseCookies(header) {
   return out;
 }
 
-// A request is authorized if it carries the session key as ?key= or as the
-// session cookie. Both are compared in constant time.
+// 当一个请求以 ?key= 形式或以会话 cookie 形式携带会话密钥时，它就是已授权的。
+// 两者都以常数时间比较。
 function isAuthorized(req) {
   const q = req.url.indexOf('?');
   if (q >= 0) {
@@ -382,7 +381,7 @@ function isAllowedWebSocketOrigin(req) {
   return origin === 'http://' + host;
 }
 
-// ========== HTTP Request Handler ==========
+// ========== HTTP 请求处理 ==========
 
 function handleRequest(req, res) {
   if (!isAuthorized(req)) {
@@ -392,9 +391,9 @@ function handleRequest(req, res) {
   }
   touchActivity(); // only authorized requests count as activity
 
-  // Mirror the key into a cookie so same-origin subresources (/files/*) can
-  // authenticate after bootstrap. HttpOnly keeps it away from page scripts; the
-  // WebSocket Origin check below is what blocks cross-origin localhost injection.
+  // 把密钥镜像写入一个 cookie，这样同源子资源（/files/*）在引导之后仍能
+  // 认证。HttpOnly 让它远离页面脚本；下方对 WebSocket Origin 的检查才是
+  // 阻止跨源 localhost 注入的手段。
   res.setHeader('Set-Cookie',
     COOKIE_NAME + '=' + TOKEN + '; HttpOnly; SameSite=Strict; Path=/');
 
@@ -420,8 +419,8 @@ function handleRequest(req, res) {
   } else if (req.method === 'GET' && pathname.startsWith('/files/')) {
     const fileName = path.basename(pathname.slice(7));
     const filePath = path.join(CONTENT_DIR, fileName);
-    // Reject empty/dotfile names and anything that isn't a regular file —
-    // `/files/` would otherwise resolve to CONTENT_DIR and crash readFileSync (EISDIR).
+    // 拒绝空名/点文件名以及任何非普通文件——
+    // 否则 `/files/` 会解析到 CONTENT_DIR 并让 readFileSync 崩溃（EISDIR）。
     if (!fileName || fileName.startsWith('.') || !isRegularFileInsideContentDir(filePath)) {
       res.writeHead(404, securityHeaders());
       res.end('Not found');
@@ -437,7 +436,7 @@ function handleRequest(req, res) {
   }
 }
 
-// ========== WebSocket Connection Handling ==========
+// ========== WebSocket 连接处理 ==========
 
 const clients = new Set();
 
@@ -523,40 +522,40 @@ function broadcast(msg) {
   }
 }
 
-// Best-effort: open the user's browser the first time a screen is actually ready
-// to show. Skips when disabled, on a non-loopback (remote) bind, or when a
-// browser is already connected. Override the launcher with BRAINSTORM_OPEN_CMD.
+// 尽力而为：在某个屏幕真正准备好展示时，第一次为用户打开浏览器。
+// 当被禁用、绑定在非回环（远程）地址、或已有浏览器连接时跳过。
+// 用 BRAINSTORM_OPEN_CMD 覆盖启动器。
 let browserOpened = false;
 function maybeOpenBrowser() {
   if (browserOpened) return;
   browserOpened = true;
-  if (!process.env.BRAINSTORM_OPEN) return; // opt-in: only after the user approves the companion
+  if (!process.env.BRAINSTORM_OPEN) return; // 可选启用：仅在用户批准使用伴侣之后
   if (HOST !== '127.0.0.1' && HOST !== 'localhost') return;
-  if (clients.size > 0) return; // the user already opened it
-  const url = companionUrl(); // must carry the key or the gate 403s it
+  if (clients.size > 0) return; // 用户已经打开过了
+  const url = companionUrl(); // 必须带上密钥，否则关卡会用 403 拒绝它
   const cp = require('child_process');
-  // Operator-provided launcher: run as given (this env var is trusted operator input).
+  // 操作者提供的启动器：按原样运行（此环境变量是受信任的操作者输入）。
   if (process.env.BRAINSTORM_OPEN_CMD) {
-    try { cp.exec(process.env.BRAINSTORM_OPEN_CMD + ' ' + JSON.stringify(url), () => {}); } catch (e) { /* best effort */ }
+    try { cp.exec(process.env.BRAINSTORM_OPEN_CMD + ' ' + JSON.stringify(url), () => {}); } catch (e) { /* 尽力而为 */ }
     return;
   }
-  // Platform launchers: pass the URL as an argv element via execFile (no shell),
-  // so a url-host containing shell metacharacters can't inject a command.
+  // 平台启动器：通过 execFile（不经过 shell）把 URL 作为 argv 元素传入，
+  // 这样包含 shell 元字符的 url-host 就无法注入命令。
   const launcher = browserLauncherForPlatform(url);
-  if (!launcher) return; // headless: nothing to open
-  try { cp.execFile(launcher.bin, launcher.args, () => {}); } catch (e) { /* best effort */ }
+  if (!launcher) return; // 无头环境：没有可打开的东西
+  try { cp.execFile(launcher.bin, launcher.args, () => {}); } catch (e) { /* 尽力而为 */ }
 }
 
-// ========== Activity Tracking ==========
+// ========== 活动追踪 ==========
 
-// Idle timeout: shut down after this long with no activity. Default 4 hours;
-// override with BRAINSTORM_IDLE_TIMEOUT_MS (start-server.sh: --idle-timeout-minutes).
+// 空闲超时：这么长时间无活动后关闭。默认 4 小时；
+// 用 BRAINSTORM_IDLE_TIMEOUT_MS 覆盖（start-server.sh：--idle-timeout-minutes）。
 const IDLE_TIMEOUT_MS = (() => {
   const ms = Number(process.env.BRAINSTORM_IDLE_TIMEOUT_MS);
   return Number.isFinite(ms) && ms > 0 ? ms : 4 * 60 * 60 * 1000;
 })();
-// How often the watchdog checks for owner-death / idleness. Configurable mainly
-// so tests can run fast; production default is 60s.
+// 看门狗检查属主进程死亡 / 空闲的频率。可配置主要是
+// 让测试能快速运行；生产默认是 60 秒。
 const LIFECYCLE_CHECK_MS = (() => {
   const ms = Number(process.env.BRAINSTORM_LIFECYCLE_CHECK_MS);
   return Number.isFinite(ms) && ms > 0 ? ms : 60 * 1000;
@@ -567,19 +566,19 @@ function touchActivity() {
   lastActivity = Date.now();
 }
 
-// ========== File Watching ==========
+// ========== 文件监视 ==========
 
 const debounceTimers = new Map();
 
-// ========== Server Startup ==========
+// ========== 服务器启动 ==========
 
 function startServer() {
   if (!fs.existsSync(CONTENT_DIR)) fs.mkdirSync(CONTENT_DIR, { recursive: true });
   if (!fs.existsSync(STATE_DIR)) fs.mkdirSync(STATE_DIR, { recursive: true });
 
-  // Track known files to distinguish new screens from updates.
-  // macOS fs.watch reports 'rename' for both new files and overwrites,
-  // so we can't rely on eventType alone.
+  // 追踪已知文件，以区分新屏幕和更新。
+  // macOS 的 fs.watch 对新文件和覆盖都上报 'rename'，
+  // 所以我们不能只依赖 eventType。
   const knownFiles = new Set(
     fs.readdirSync(CONTENT_DIR).filter(f => !f.startsWith('.') && f.endsWith('.html'))
   );
@@ -595,7 +594,7 @@ function startServer() {
       debounceTimers.delete(filename);
       const filePath = path.join(CONTENT_DIR, filename);
 
-      if (!fs.existsSync(filePath)) return; // file was deleted
+      if (!fs.existsSync(filePath)) return; // 文件已被删除
       touchActivity();
 
       if (!knownFiles.has(filename)) {
@@ -623,10 +622,10 @@ function startServer() {
     );
     watcher.close();
     clearInterval(lifecycleCheck);
-    // Close any upgraded WebSocket sockets so server.close() can complete and
-    // the process actually exits instead of lingering on an open connection.
+    // 关闭所有已升级的 WebSocket 套接字，以便 server.close() 能完成，
+    // 进程真正退出，而不是因一个打开的连接而 lingering（滞留）。
     for (const socket of clients) {
-      try { socket.destroy(); } catch (e) { /* already gone */ }
+      try { socket.destroy(); } catch (e) { /* 已经没了 */ }
     }
     server.close(() => process.exit(0));
   }
@@ -636,16 +635,16 @@ function startServer() {
     try { process.kill(ownerPid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
   }
 
-  // Periodically exit if the owner process died or we've been idle too long.
+  // 如果属主进程已死亡，或我们空闲太久，则周期性地退出。
   const lifecycleCheck = setInterval(() => {
     if (!ownerAlive()) shutdown('owner process exited');
     else if (Date.now() - lastActivity > IDLE_TIMEOUT_MS) shutdown('idle timeout');
   }, LIFECYCLE_CHECK_MS);
   lifecycleCheck.unref();
 
-  // Validate owner PID at startup. If it's already dead, the PID resolution
-  // was wrong (common on WSL, Tailscale SSH, and cross-user scenarios).
-  // Disable monitoring and rely on the idle timeout instead.
+  // 在启动时验证属主 PID。如果它已经死了，说明 PID 解析错了
+  // （在 WSL、Tailscale SSH 和跨用户场景中常见）。
+  // 禁用监视，转而依赖空闲超时。
   if (ownerPid) {
     try { process.kill(ownerPid, 0); }
     catch (e) {
@@ -656,26 +655,25 @@ function startServer() {
     }
   }
 
-  // If the preferred port is already taken (e.g. a previous server is still
-  // alive), fall back to a random port once instead of failing.
+  // 如果首选端口已被占用（例如前一个服务器还活着），
+  // 回退到一个随机端口一次，而不是直接失败。
   let triedFallback = false;
 
   function onListen() {
-    // Cookie name keys on the ACTUAL bound port (may differ from the preferred
-    // one after an EADDRINUSE fallback) so it can't collide with another server's
-    // cookie in the shared localhost jar.
+    // Cookie 名以实际绑定的端口为键（在 EADDRINUSE 回退后可能与首选端口不同），
+    // 这样它就不会与共享 localhost cookie 罐里另一个服务器的 cookie 冲突。
     COOKIE_NAME = 'brainstorm-key-' + PORT;
-    // Record the bound port AND token so the next restart of this session reuses
-    // them — but ONLY when we got our preferred port. On a fallback we bound a
-    // *different* port because someone else holds the preferred one; persisting
-    // would overwrite the shared files and strand that other session's open tab.
+    // 记录绑定的端口和 token，以便本会话下次重启时复用它们——
+    // 但仅当我们拿到了首选端口时才记录。回退时我们绑定了一个*不同*的端口，
+    // 因为别的进程占着首选端口；此时持久化会覆盖共享文件，
+    // 让那个会话已打开的标签页变成孤儿。
     if (PORT_FILE && !triedFallback) {
-      try { fs.writeFileSync(PORT_FILE, String(PORT)); } catch (e) { /* best effort */ }
+      try { fs.writeFileSync(PORT_FILE, String(PORT)); } catch (e) { /* 尽力而为 */ }
       if (TOKEN_FILE) {
         try {
           fs.writeFileSync(TOKEN_FILE, TOKEN, { mode: 0o600 });
           chmodOwnerOnly(TOKEN_FILE);
-        } catch (e) { /* best effort */ }
+        } catch (e) { /* 尽力而为 */ }
       }
     }
     const info = JSON.stringify({
@@ -684,7 +682,7 @@ function startServer() {
       screen_dir: CONTENT_DIR, state_dir: STATE_DIR, idle_timeout_ms: IDLE_TIMEOUT_MS
     });
     console.log(info);
-    // server-info embeds the key — keep it owner-only.
+    // server-info 内含密钥——只让属主可读。
     fs.writeFileSync(path.join(STATE_DIR, 'server-info'), info + '\n', { mode: 0o600 });
   }
 

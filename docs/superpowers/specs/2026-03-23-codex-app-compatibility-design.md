@@ -1,37 +1,37 @@
-# Codex App Compatibility: Worktree and Finishing Skill Adaptation
+# Codex App 兼容性：Worktree 与 Finishing 技能适配
 
-Make superpowers skills work in the Codex App's sandboxed worktree environment without breaking existing Claude Code or Codex CLI behavior.
+让 superpowers 技能在 Codex App 沙箱化的 worktree 环境中工作，同时不破坏现有 Claude Code 或 Codex CLI 的行为。
 
-**Ticket:** PRI-823
+**工单：** PRI-823
 
-## Motivation
+## 动机
 
-The Codex App runs agents inside git worktrees it manages — detached HEAD, located under `$CODEX_HOME/worktrees/`, with a Seatbelt sandbox that blocks `git checkout -b`, `git push`, and network access. Three superpowers skills assume unrestricted git access: `using-git-worktrees` creates manual worktrees with named branches, `finishing-a-development-branch` merges/pushes/PRs by branch name, and `subagent-driven-development` requires both.
+Codex App 在它自己管理的 git worktree 中运行代理——分离 HEAD，位于 `$CODEX_HOME/worktrees/` 下，配合一个阻止 `git checkout -b`、`git push` 和网络访问的 Seatbelt 沙箱。三个 superpowers 技能假定 git 访问不受限：`using-git-worktrees` 用命名分支创建手动 worktree，`finishing-a-development-branch` 通过分支名进行合并/推送/创建 PR，而 `subagent-driven-development` 同时依赖这两者。
 
-The Codex CLI (open source terminal tool) does NOT have this conflict — it has no built-in worktree management. Our manual worktree approach fills an isolation gap there. The problem is specifically with the Codex App.
+Codex CLI（开源终端工具）不存在这个冲突——它没有内置的 worktree 管理。我们的手动 worktree 方案在那里填补了一项隔离能力的空白。问题专门出在 Codex App 上。
 
-## Empirical Findings
+## 实证发现
 
-Tested in the Codex App on 2026-03-23:
+2026-03-23 在 Codex App 中测试：
 
-| Operation | workspace-write sandbox | Full access sandbox |
+| 操作 | workspace-write 沙箱 | Full access 沙箱 |
 |---|---|---|
-| `git add` | Works | Works |
-| `git commit` | Works | Works |
-| `git checkout -b` | **Blocked** (can't write `.git/refs/heads/`) | Works |
-| `git push` | **Blocked** (network + `.git/refs/remotes/`) | Works |
-| `gh pr create` | **Blocked** (network) | Works |
-| `git status/diff/log` | Works | Works |
+| `git add` | 可用 | 可用 |
+| `git commit` | 可用 | 可用 |
+| `git checkout -b` | **被阻止**（无法写 `.git/refs/heads/`） | 可用 |
+| `git push` | **被阻止**（网络 + `.git/refs/remotes/`） | 可用 |
+| `gh pr create` | **被阻止**（网络） | 可用 |
+| `git status/diff/log` | 可用 | 可用 |
 
-Additional findings:
-- `spawn_agent` subagents **share** the parent thread's filesystem (confirmed via marker file test)
-- "Create branch" button appears in the App header regardless of which branch the worktree was started from
-- The App's native finishing flow: Create branch → Commit modal → Commit and push / Commit and create PR
-- `network_access = true` config is silently broken on macOS (issue #10390)
+其他发现：
+- `spawn_agent` 子代理**共享**父线程的文件系统（已通过标记文件测试确认）
+- 无论 worktree 从哪个分支启动，App 头部都会显示 "Create branch" 按钮
+- App 原生的收尾流程：Create branch → Commit 弹窗 → Commit and push / Commit and create PR
+- `network_access = true` 配置在 macOS 上会静默失效（issue #10390）
 
-## Design: Read-Only Environment Detection
+## 设计：只读环境检测
 
-Three read-only git commands detect the environment without side effects:
+三条只读 git 命令可以无副作用地探测环境：
 
 ```bash
 GIT_DIR=$(cd "$(git rev-parse --git-dir)" 2>/dev/null && pwd -P)
@@ -39,67 +39,67 @@ GIT_COMMON=$(cd "$(git rev-parse --git-common-dir)" 2>/dev/null && pwd -P)
 BRANCH=$(git branch --show-current)
 ```
 
-Two signals derived:
+由此得出两个信号：
 
-- **IN_LINKED_WORKTREE:** `GIT_DIR != GIT_COMMON` — the agent is in a worktree created by something else (Codex App, Claude Code Agent tool, previous skill run, or the user)
-- **ON_DETACHED_HEAD:** `BRANCH` is empty — no named branch exists
+- **IN_LINKED_WORKTREE：** `GIT_DIR != GIT_COMMON` —— 代理处于某个其他主体创建的 worktree 中（Codex App、Claude Code 的 Agent 工具、之前的技能运行，或你的搭档）
+- **ON_DETACHED_HEAD：** `BRANCH` 为空 —— 不存在命名分支
 
-Why `git-dir != git-common-dir` instead of checking `show-toplevel`:
-- In a normal repo, both resolve to the same `.git` directory
-- In a linked worktree, `git-dir` is `.git/worktrees/<name>` while `git-common-dir` is `.git`
-- In a submodule, both are equal — avoiding a false positive that `show-toplevel` would produce
-- Resolving via `cd && pwd -P` handles the relative-path problem (`git-common-dir` returns `.git` relative in normal repos but absolute in worktrees) and symlinks (macOS `/tmp` → `/private/tmp`)
+为什么用 `git-dir != git-common-dir` 而不是检查 `show-toplevel`：
+- 在普通仓库中，两者解析到同一个 `.git` 目录
+- 在链接型 worktree 中，`git-dir` 是 `.git/worktrees/<name>`，而 `git-common-dir` 是 `.git`
+- 在 submodule 中两者相等 —— 避免了 `show-toplevel` 会产生的误报
+- 通过 `cd && pwd -P` 解析处理了相对路径问题（`git-common-dir` 在普通仓库中返回相对的 `.git`，但在 worktree 中返回绝对路径）以及符号链接（macOS 的 `/tmp` → `/private/tmp`）
 
-### Decision Matrix
+### 决策矩阵
 
-| Linked Worktree? | Detached HEAD? | Environment | Action |
+| 在链接型 worktree 中？ | 分离 HEAD？ | 环境 | 动作 |
 |---|---|---|---|
-| No | No | Claude Code / Codex CLI / normal git | Full skill behavior (unchanged) |
-| Yes | Yes | Codex App worktree (workspace-write) | Skip worktree creation; handoff payload at finish |
-| Yes | No | Codex App (Full access) or manual worktree | Skip worktree creation; full finishing flow |
-| No | Yes | Unusual (manual detached HEAD) | Create worktree normally; warn at finish |
+| 否 | 否 | Claude Code / Codex CLI / 正常 git | 完整技能行为（不变） |
+| 是 | 是 | Codex App worktree（workspace-write） | 跳过 worktree 创建；收尾时给出交接载荷 |
+| 是 | 否 | Codex App（Full access）或手动 worktree | 跳过 worktree 创建；完整收尾流程 |
+| 否 | 是 | 异常（手动分离 HEAD） | 正常创建 worktree；收尾时警告 |
 
-## Changes
+## 变更
 
-### 1. `using-git-worktrees/SKILL.md` — Add Step 0 (~12 lines)
+### 1. `using-git-worktrees/SKILL.md` —— 新增 Step 0（约 12 行）
 
-New section between "Overview" and "Directory Selection Process":
+在 "Overview" 与 "Directory Selection Process" 之间新增一节：
 
-**Step 0: Check if Already in an Isolated Workspace**
+**Step 0：检查是否已在隔离工作区**
 
-Run the detection commands. If `GIT_DIR != GIT_COMMON`, skip worktree creation entirely. Instead:
-1. Skip to "Run Project Setup" subsection under Creation Steps — `npm install` etc. is idempotent, worth running for safety
-2. Then "Verify Clean Baseline" — run tests
-3. Report with branch state:
-   - On a branch: "Already in an isolated workspace at `<path>` on branch `<name>`. Tests passing. Ready to implement."
-   - Detached HEAD: "Already in an isolated workspace at `<path>` (detached HEAD, externally managed). Tests passing. Note: branch creation needed at finish time. Ready to implement."
+运行检测命令。如果 `GIT_DIR != GIT_COMMON`，则完全跳过 worktree 创建。改为：
+1. 跳到 Creation Steps 下的 "Run Project Setup" 子节 —— `npm install` 等操作是幂等的，为安全起见值得运行
+2. 然后执行 "Verify Clean Baseline" —— 跑测试
+3. 报告分支状态：
+   - 在分支上："Already in an isolated workspace at `<path>` on branch `<name>`. Tests passing. Ready to implement."
+   - 分离 HEAD："Already in an isolated workspace at `<path>` (detached HEAD, externally managed). Tests passing. Note: branch creation needed at finish time. Ready to implement."
 
-If `GIT_DIR == GIT_COMMON`, proceed with the full worktree creation flow (unchanged).
+如果 `GIT_DIR == GIT_COMMON`，则继续完整的 worktree 创建流程（不变）。
 
-Safety verification (.gitignore check) is skipped when Step 0 fires — irrelevant for externally-created worktrees.
+Step 0 触发时跳过安全校验（.gitignore 检查）—— 对外部创建的 worktree 无意义。
 
-Update the Integration section's "Called by" entries. Change the description on each from context-specific text to: "Ensures isolated workspace (creates one or verifies existing)". For example, the `subagent-driven-development` entry changes from "REQUIRED: Set up isolated workspace before starting" to "REQUIRED: Ensures isolated workspace (creates one or verifies existing)".
+更新 Integration 节里的 "Called by" 条目。把每条的描述从上下文相关文本改为："Ensures isolated workspace (creates one or verifies existing)"。例如，`subagent-driven-development` 的条目从 "REQUIRED: Set up isolated workspace before starting" 改为 "REQUIRED: Ensures isolated workspace (creates one or verifies existing)"。
 
-**Sandbox fallback:** If `GIT_DIR == GIT_COMMON` and the skill proceeds to Creation Steps, but `git worktree add -b` fails with a permission error (e.g., Seatbelt sandbox denial), treat this as a late-detected restricted environment. Fall back to the Step 0 "already in workspace" behavior — skip creation, run setup and baseline tests in the current directory, report accordingly.
+**沙箱回退：** 如果 `GIT_DIR == GIT_COMMON` 且技能继续执行 Creation Steps，但 `git worktree add -b` 因权限错误失败（例如 Seatbelt 沙箱拒绝），则视作延迟检测到的受限环境。回退到 Step 0 的 "already in workspace" 行为——跳过创建、在当前目录运行 setup 和基线测试，并相应报告。
 
-After reporting in Step 0, STOP. Do not continue to Directory Selection or Creation Steps.
+Step 0 报告完成后，停止（STOP）。不要继续到 Directory Selection 或 Creation Steps。
 
-**Everything else unchanged:** Directory Selection, Safety Verification, Creation Steps, Project Setup, Baseline Tests, Quick Reference, Common Mistakes, Red Flags.
+**其他内容不变：** Directory Selection、Safety Verification、Creation Steps、Project Setup、Baseline Tests、Quick Reference、Common Mistakes、Red Flags。
 
-### 2. `finishing-a-development-branch/SKILL.md` — Add Step 1.5 + cleanup guard (~20 lines)
+### 2. `finishing-a-development-branch/SKILL.md` —— 新增 Step 1.5 + 清理守卫（约 20 行）
 
-**Step 1.5: Detect Environment** (after Step 1 "Verify Tests", before Step 2 "Determine Base Branch")
+**Step 1.5：检测环境**（位于 Step 1 "Verify Tests" 之后、Step 2 "Determine Base Branch" 之前）
 
-Run the detection commands. Three paths:
+运行检测命令。三条路径：
 
-- **Path A** skips Steps 2 and 3 entirely (no base branch or options needed).
-- **Paths B and C** proceed through Step 2 (Determine Base Branch) and Step 3 (Present Options) as normal.
+- **Path A** 完全跳过 Steps 2 和 3（不需要 base branch 或选项）。
+- **Paths B 和 C** 如常继续 Step 2（Determine Base Branch）和 Step 3（Present Options）。
 
-**Path A — Externally managed worktree + detached HEAD** (`GIT_DIR != GIT_COMMON` AND `BRANCH` empty):
+**Path A —— 外部管理的 worktree + 分离 HEAD**（`GIT_DIR != GIT_COMMON` 且 `BRANCH` 为空）：
 
-First, ensure all work is staged and committed (`git add` + `git commit`). The Codex App's finishing controls operate on committed work.
+首先，确保所有改动已暂存并提交（`git add` + `git commit`）。Codex App 的收尾控件操作的是已提交的工作。
 
-Then present this to the user (do NOT present the 4-option menu):
+然后向你的搭档呈现以下信息（不要（do NOT）展示 4 选项菜单）：
 
 ```
 Implementation complete. All tests passing.
@@ -119,44 +119,44 @@ Suggested branch name: <ticket-id/short-description>
 Suggested commit message: <summary-of-work>
 ```
 
-Branch name derivation: use the ticket ID if available (e.g., `pri-823/codex-compat`), otherwise slugify the first 5 words of the plan title, otherwise omit the suggestion. Avoid including sensitive content (vulnerability descriptions, customer names) in branch names.
+分支名推导：如果有工单 ID 就使用它（例如 `pri-823/codex-compat`），否则把计划标题的前 5 个词 slugify，再否则省略建议。避免在分支名里包含敏感内容（漏洞描述、客户名等）。
 
-Skip to Step 5 (cleanup is a no-op for externally managed worktrees).
+跳到 Step 5（对外部管理的 worktree 而言清理是 no-op）。
 
-**Path B — Externally managed worktree + named branch** (`GIT_DIR != GIT_COMMON` AND `BRANCH` exists):
+**Path B —— 外部管理的 worktree + 命名分支**（`GIT_DIR != GIT_COMMON` 且 `BRANCH` 存在）：
 
-Present the 4-option menu as normal. (The Step 5 cleanup guard will re-detect the externally managed state independently.)
+如常展示 4 选项菜单。（Step 5 清理守卫会独立地重新检测外部管理状态。）
 
-**Path C — Normal environment** (`GIT_DIR == GIT_COMMON`):
+**Path C —— 正常环境**（`GIT_DIR == GIT_COMMON`）：
 
-Present the 4-option menu as today (unchanged).
+如当前一样展示 4 选项菜单（不变）。
 
-**Step 5 cleanup guard:**
+**Step 5 清理守卫：**
 
-Re-run the `GIT_DIR` vs `GIT_COMMON` detection at cleanup time (do not rely on earlier skill output — the finishing skill may run in a different session). If `GIT_DIR != GIT_COMMON`, skip `git worktree remove` — the host environment owns this workspace.
+在清理时重新运行 `GIT_DIR` 对 `GIT_COMMON` 的检测（不要依赖更早的技能输出——finishing 技能可能在另一个会话中运行）。如果 `GIT_DIR != GIT_COMMON`，则跳过 `git worktree remove` —— 宿主环境拥有此工作区。
 
-Otherwise, check and remove as today. Note: the existing Step 5 text says "For Options 1, 2, 4" but the Quick Reference table and Common Mistakes section say "Options 1 & 4 only." The new guard is added before this existing logic and does not change which options trigger cleanup.
+否则，按当前方式检查并清理。注意：现有 Step 5 文本写的是 "For Options 1, 2, 4"，但 Quick Reference 表和 Common Mistakes 节写的是 "Options 1 & 4 only."。新守卫加在这套现有逻辑之前，且不改变哪些选项会触发清理。
 
-**Everything else unchanged:** Options 1-4 logic, Quick Reference, Common Mistakes, Red Flags.
+**其他内容不变：** Options 1-4 逻辑、Quick Reference、Common Mistakes、Red Flags。
 
-### 3. `subagent-driven-development/SKILL.md` and `executing-plans/SKILL.md` — 1 line edit each
+### 3. `subagent-driven-development/SKILL.md` 和 `executing-plans/SKILL.md` —— 各 1 行修改
 
-Both skills have an identical Integration section line. Change from:
+两个技能的 Integration 节有一行相同的内容。从：
 ```
 - superpowers:using-git-worktrees - REQUIRED: Set up isolated workspace before starting
 ```
-To:
+改为：
 ```
 - superpowers:using-git-worktrees - REQUIRED: Ensures isolated workspace (creates one or verifies existing)
 ```
 
-**Everything else unchanged:** Dispatch/review loop, prompt templates, model selection, status handling, red flags.
+**其他内容不变：** 派发/审查循环、prompt 模板、模型选择、状态处理、red flags。
 
-### 4. `codex-tools.md` — Add environment detection docs (~15 lines)
+### 4. `codex-tools.md` —— 新增环境检测文档（约 15 行）
 
-Two new sections at the end:
+末尾新增两节：
 
-**Environment Detection:**
+**Environment Detection：**
 
 ```markdown
 ## Environment Detection
@@ -177,7 +177,7 @@ See `using-git-worktrees` Step 0 and `finishing-a-development-branch`
 Step 1.5 for how each skill uses these signals.
 ```
 
-**Codex App Finishing:**
+**Codex App Finishing：**
 
 ```markdown
 ## Codex App Finishing
@@ -193,52 +193,52 @@ The agent can still run tests, stage files, and output suggested branch
 names, commit messages, and PR descriptions for the user to copy.
 ```
 
-## What Does NOT Change
+## 不变内容
 
-- `implementer-prompt.md`, `spec-reviewer-prompt.md`, `code-quality-reviewer-prompt.md` — subagent prompts untouched
-- `executing-plans/SKILL.md` — only the 1-line Integration description changes (same as `subagent-driven-development`); all runtime behavior is unchanged
-- `dispatching-parallel-agents/SKILL.md` — no worktree or finishing operations
-- `.codex/INSTALL.md` — installation process unchanged
-- The 4-option finishing menu — preserved exactly for Claude Code and Codex CLI
-- The full worktree creation flow — preserved exactly for non-worktree environments
-- Subagent dispatch/review/iterate loop — unchanged (filesystem sharing confirmed)
+- `implementer-prompt.md`、`spec-reviewer-prompt.md`、`code-quality-reviewer-prompt.md` —— 子代理 prompt 不动
+- `executing-plans/SKILL.md` —— 仅 1 行 Integration 描述变化（与 `subagent-driven-development` 相同）；所有运行时行为不变
+- `dispatching-parallel-agents/SKILL.md` —— 没有 worktree 或 finishing 操作
+- `.codex/INSTALL.md` —— 安装流程不变
+- 4 选项 finishing 菜单 —— 为 Claude Code 和 Codex CLI 精确保留
+- 完整 worktree 创建流程 —— 为非 worktree 环境精确保留
+- 子代理 派发/审查/迭代 循环 —— 不变（已确认文件系统共享）
 
-## Scope Summary
+## 范围概览
 
-| File | Change |
+| 文件 | 变更 |
 |---|---|
-| `skills/using-git-worktrees/SKILL.md` | +12 lines (Step 0) |
-| `skills/finishing-a-development-branch/SKILL.md` | +20 lines (Step 1.5 + cleanup guard) |
-| `skills/subagent-driven-development/SKILL.md` | 1 line edit |
-| `skills/executing-plans/SKILL.md` | 1 line edit |
-| `skills/using-superpowers/references/codex-tools.md` | +15 lines |
+| `skills/using-git-worktrees/SKILL.md` | +12 行（Step 0） |
+| `skills/finishing-a-development-branch/SKILL.md` | +20 行（Step 1.5 + 清理守卫） |
+| `skills/subagent-driven-development/SKILL.md` | 1 行修改 |
+| `skills/executing-plans/SKILL.md` | 1 行修改 |
+| `skills/using-superpowers/references/codex-tools.md` | +15 行 |
 
-~50 lines added/changed across 5 files. Zero new files. Zero breaking changes.
+跨 5 个文件共约 50 行新增/修改。零新增文件。零破坏性变更。
 
-## Future Considerations
+## 未来考虑
 
-If a third skill needs the same detection pattern, extract it into a shared `references/environment-detection.md` file (Approach B). Not needed now — only 2 skills use it.
+如果第三个技能需要相同的检测模式，就把它抽取到一个共享的 `references/environment-detection.md` 文件（方案 B）。现在不需要——只有 2 个技能用到它。
 
-## Test Plan
+## 测试计划
 
-### Automated (run in Claude Code after implementation)
+### 自动化（实现后在 Claude Code 中运行）
 
-1. Normal repo detection — assert IN_LINKED_WORKTREE=false
-2. Linked worktree detection — `git worktree add` test worktree, assert IN_LINKED_WORKTREE=true
-3. Detached HEAD detection — `git checkout --detach`, assert ON_DETACHED_HEAD=true
-4. Finishing skill handoff output — verify handoff message (not 4-option menu) in restricted environment
-5. **Step 5 cleanup guard** — create a linked worktree (`git worktree add /tmp/test-cleanup -b test-cleanup`), `cd` into it, run the Step 5 cleanup detection (`GIT_DIR` vs `GIT_COMMON`), assert it would NOT call `git worktree remove`. Then `cd` back to main repo, run the same detection, assert it WOULD call `git worktree remove`. Clean up test worktree afterward.
+1. 普通仓库检测 —— 断言 IN_LINKED_WORKTREE=false
+2. 链接型 worktree 检测 —— `git worktree add` 一个测试 worktree，断言 IN_LINKED_WORKTREE=true
+3. 分离 HEAD 检测 —— `git checkout --detach`，断言 ON_DETACHED_HEAD=true
+4. Finishing 技能交接输出 —— 在受限环境中验证交接消息（而非 4 选项菜单）
+5. **Step 5 清理守卫** —— 创建一个链接型 worktree（`git worktree add /tmp/test-cleanup -b test-cleanup`），`cd` 进去，运行 Step 5 清理检测（`GIT_DIR` 对 `GIT_COMMON`），断言它不会调用 `git worktree remove`。然后 `cd` 回主仓库，运行相同检测，断言它**会**调用 `git worktree remove`。之后清理测试 worktree。
 
-### Manual Codex App Tests (5 tests)
+### 手动 Codex App 测试（5 项）
 
-1. Detection in Worktree thread (workspace-write) — verify GIT_DIR != GIT_COMMON, empty branch
-2. Detection in Worktree thread (Full access) — same detection, different sandbox behavior
-3. Finishing skill handoff format — verify agent emits handoff payload, not 4-option menu
-4. Full lifecycle — detection → commit → finishing detection → correct behavior → cleanup
-5. **Sandbox fallback in Local thread** — Start a Codex App **Local thread** (workspace-write sandbox). Prompt: "Use the superpowers skill `using-git-worktrees` to set up an isolated workspace for implementing a small change." Pre-check: `git checkout -b test-sandbox-check` should fail with `Operation not permitted`. Expected: the skill detects `GIT_DIR == GIT_COMMON` (normal repo), attempts `git worktree add -b`, hits Seatbelt denial, falls back to Step 0 "already in workspace" behavior — runs setup, baseline tests, reports ready from current directory. Pass: agent recovers gracefully without cryptic error messages. Fail: agent prints raw Seatbelt error, retries, or gives up with confusing output.
+1. 在 Worktree 线程中检测（workspace-write） —— 验证 GIT_DIR != GIT_COMMON、分支为空
+2. 在 Worktree 线程中检测（Full access） —— 相同检测，不同沙箱行为
+3. Finishing 技能交接格式 —— 验证代理发出交接载荷，而非 4 选项菜单
+4. 完整生命周期 —— 检测 → 提交 → finishing 检测 → 正确行为 → 清理
+5. **Local 线程中的沙箱回退** —— 启动一个 Codex App **Local 线程**（workspace-write 沙箱）。Prompt："Use the superpowers skill `using-git-worktrees` to set up an isolated workspace for implementing a small change." 预检：`git checkout -b test-sandbox-check` 应当以 `Operation not permitted` 失败。期望：技能检测到 `GIT_DIR == GIT_COMMON`（普通仓库），尝试 `git worktree add -b`，命中 Seatbelt 拒绝，回退到 Step 0 的 "already in workspace" 行为 —— 运行 setup、基线测试，从当前目录报告就绪。通过：代理优雅恢复，无晦涩报错。失败：代理打印原始 Seatbelt 错误、重试，或以混乱输出放弃。
 
-### Regression
+### 回归
 
-- Existing Claude Code skill-triggering tests still pass
-- Existing subagent-driven-development integration tests still pass
-- Normal Claude Code session: full worktree creation + 4-option finishing still works
+- 现有 Claude Code skill-triggering 测试仍然通过
+- 现有 subagent-driven-development 集成测试仍然通过
+- 正常 Claude Code 会话：完整 worktree 创建 + 4 选项 finishing 仍可用

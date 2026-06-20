@@ -1,27 +1,27 @@
-# Platform-neutral README ordering — Phase C design
+# 平台中立 README 排序 — Phase C 设计
 
-## Background
+## 背景
 
-Phases A and B (see `2026-05-05-platform-neutral-prose-design.md` and `2026-05-05-platform-neutral-config-refs-design.md`) already neutralized generic Claude prose and config-file references in the README. The remaining platform-leaning signal is layout: the README's two platform listings put Claude Code first and aren't strictly alphabetical elsewhere.
+Phase A 和 Phase B（见 `2026-05-05-platform-neutral-prose-design.md` 与 `2026-05-05-platform-neutral-config-refs-design.md`）已将 README 中通用的 Claude 散文和配置文件引用做了中性化处理。剩余的平台倾向信号在版式上：README 的两处平台列表把 Claude Code 放在首位，其余位置也不是严格按字母顺序排列。
 
-This phase fixes the ordering. No prose changes.
+本阶段修正排序。不改动散文。
 
-## In scope
+## 范围内
 
-1. **Quickstart platform list** (`README.md:7`) — the inline link list of supported harnesses
-2. **Installation section ordering** (`README.md:35–152`) — the per-harness install sub-sections
+1. **快速开始平台列表**（`README.md:7`）— 支持宿主的内联链接列表
+2. **安装章节排序**（`README.md:35–152`）— 各宿主的安装子章节
 
-## Out of scope
+## 范围外
 
-- Prose, marketplace names, plugin IDs, URLs — all factually correct as-is.
-- Visual weight of the Claude Code section (which has two sub-sections — official Anthropic marketplace and Superpowers marketplace). Both are real install paths; collapsing them would hide accurate info.
-- Section headings and content within each install block — only the ordering of the blocks changes.
+- 散文、市场名称、插件 ID、URL — 现状在事实上都正确。
+- Claude Code 章节的视觉权重（它有两个子章节 — 官方 Anthropic marketplace 与 Superpowers marketplace）。两者都是真实安装路径；合并它们会掩盖准确信息。
+- 各安装块内部的章节标题和内容 — 只改变块的顺序。
 
-## Substitution
+## 替换
 
-Both listings reorder to strict alphabetical:
+两处列表都重新排序为严格字母顺序：
 
-| Old order | New order |
+| 旧顺序 | 新顺序 |
 |-----------|-----------|
 | Claude Code | Claude Code |
 | Codex CLI | Codex App |
@@ -32,16 +32,16 @@ Both listings reorder to strict alphabetical:
 | Cursor | GitHub Copilot CLI |
 | GitHub Copilot CLI | OpenCode |
 
-Three moves: Codex App swaps with Codex CLI; Cursor moves up two slots; GitHub Copilot CLI moves up one.
+三处移动：Codex App 与 Codex CLI 互换；Cursor 上移两位；GitHub Copilot CLI 上移一位。
 
-Claude Code remains first by alphabetical chance (`Cl…` precedes `Co…`).
+Claude Code 仍居首位，纯属字母巧合（`Cl…` 在 `Co…` 之前）。
 
-## Commit plan
+## 提交计划
 
-One atomic commit covering both listings, since changing one without the other would create inconsistency between the quickstart and the installation section.
+一个原子提交覆盖两处列表，因为只改一处会让快速开始和安装章节之间不一致。
 
-## Verification
+## 验证
 
-- Quickstart anchors (`#claude-code`, `#codex-app`, etc.) still resolve to existing `### …` headings — no headings renamed.
-- Each install sub-section's body is byte-identical pre/post; only positions changed.
-- `git diff README.md` shows section moves only, no content edits.
+- 快速开始的锚点（`#claude-code`、`#codex-app` 等）仍然指向现有的 `### …` 标题 — 未重命名任何标题。
+- 各安装子章节的正文在前后字节完全一致；只改变了位置。
+- `git diff README.md` 只显示章节移动，没有内容编辑。

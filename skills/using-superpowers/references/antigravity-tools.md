@@ -1,96 +1,60 @@
-# Antigravity CLI (`agy`) Tool Mapping
+# Antigravity CLI（`agy`）工具映射
 
-Skills speak in actions ("dispatch a subagent", "create a todo", "read a file"). On the Antigravity CLI (`agy`) these resolve to the tools below.
+技能用动作说话（"分派一个子代理"、"创建一个待办"、"读一个文件"）。在 Antigravity CLI（`agy`）上，这些解析为下面的工具。
 
-| Action skills request | Antigravity CLI equivalent |
+| 技能请求的动作 | Antigravity CLI 等价物 |
 |----------------------|----------------------|
-| Read a file | `view_file` |
-| Create a new file | `write_to_file` |
-| Edit a file | `replace_file_content` |
-| Edit a file in several places at once | `multi_replace_file_content` |
-| Run a shell command | `run_command` |
-| Search file contents | `grep_search` |
-| Find files by name / list a directory | `list_dir` (no dedicated glob tool — combine `list_dir` with `grep_search`) |
-| Fetch a URL | `read_url_content` |
-| Search the web | `search_web` |
-| Pose a structured question to your human partner | `ask_question` |
-| Dispatch a subagent (`Subagent (general-purpose):` template) | `invoke_subagent` with a built-in `TypeName` — `self` for full-capability work, `research` for read-only (see [Subagent support](#subagent-support)) |
-| Multiple parallel dispatches | Multiple entries in one `invoke_subagent` call's `Subagents` array |
-| Task tracking ("create a todo", "mark complete") | a **task artifact** — `write_to_file` with `IsArtifact: true` and `ArtifactType: "task"` (see [Task tracking](#task-tracking)). **Not** `manage_task`, which manages background processes. |
+| 读文件 | `view_file` |
+| 创建新文件 | `write_to_file` |
+| 编辑文件 | `replace_file_content` |
+| 一次编辑文件的多个位置 | `multi_replace_file_content` |
+| 运行 shell 命令 | `run_command` |
+| 搜索文件内容 | `grep_search` |
+| 按名查找文件 / 列出目录 | `list_dir`（没有专门的 glob 工具——把 `list_dir` 与 `grep_search` 结合） |
+| 抓取 URL | `read_url_content` |
+| 搜索网络 | `search_web` |
+| 向你的搭档提出结构化问题 | `ask_question` |
+| 分派子代理（`Subagent (general-purpose):` 模板） | `invoke_subagent` 配一个内置 `TypeName`——`self` 用于全能力工作，`research` 用于只读（见[子代理支持](#子代理支持)） |
+| 多个并行分派 | 在一个 `invoke_subagent` 调用的 `Subagents` 数组里多个条目 |
+| 任务跟踪（"创建待办"、"标记完成"） | 一个 **task artifact**——`write_to_file` 配 `IsArtifact: true` 和 `ArtifactType: "task"`（见[任务跟踪](#任务跟踪)）。**不是** `manage_task`，它管理后台进程。 |
 
-## Invoking a skill — read its `SKILL.md`
+## 调用技能——读它的 `SKILL.md`
 
-Antigravity surfaces every installed skill's `name` + `description` to you at the
-start of each session, but it has **no `Skill`/`activate_skill` tool**. To load a
-skill, **read its `SKILL.md` with `view_file`, setting `IsSkillFile: true`** when
-the skill applies — e.g. `view_file` on
-`.../plugins/superpowers/skills/<skill-name>/SKILL.md` with `IsSkillFile: true`.
-(`IsSkillFile` is agy's own signal that you're reading a file to *execute its
-instructions*, not to edit or preview it — set it whenever you load a skill.)
+Antigravity 在每个会话开始时把每个已安装技能的 `name` + `description` 呈现给你，但它**没有 `Skill`/`activate_skill` 工具**。要加载技能，**用 `view_file` 读它的 `SKILL.md`，当技能适用时设置 `IsSkillFile: true`**——例如对
+`.../plugins/superpowers/skills/<skill-name>/SKILL.md` 调用 `view_file` 并设 `IsSkillFile: true`。
+（`IsSkillFile` 是 agy 自己的信号，表示你在读文件以*执行其指令*，而非编辑或预览它——每当你加载技能时设置它。）
 
-This is the blessed skill-loading mechanism on this harness. The general rule
-"never read skill files manually" means "don't bypass your platform's
-skill-loading mechanism" — and on Antigravity, reading `SKILL.md` *is* that
-mechanism. Reading it honors the rule rather than breaking it.
+这是本 harness 上受祝福的技能加载机制。通用规则"绝不要手动读技能文件"意思是"不要绕过你平台的技能加载机制"——而在 Antigravity 上，读 `SKILL.md` *就是*那个机制。读它是在遵循规则，而非破坏它。
 
-You already know which skills exist and what they're for: their names and
-descriptions are in front of you at session start. When a description matches
-what you're about to do, read that skill's `SKILL.md` before acting.
+你已经知道哪些技能存在以及它们的用途：它们的名字和描述在会话开始时就在你面前。当一个描述匹配你即将做的事时，在行动前读那个技能的 `SKILL.md`。
 
-## Subagent support
+## 子代理支持
 
-Antigravity dispatches subagents with `invoke_subagent`, passing each one a
-`TypeName` in the `Subagents` array. Two `TypeName`s are **built in** — use them
-directly, no `define_subagent` needed:
+Antigravity 用 `invoke_subagent` 分派子代理，在 `Subagents` 数组里传每个一个 `TypeName`。两个 `TypeName` 是**内置**的——直接用，无需 `define_subagent`：
 
-- **`self`** — a full clone of you, with every tool you have (including
-  `write_to_file`/`replace_file_content`/`run_command`). The safe default for
-  general-purpose work: implementing, fixing, anything that edits files or runs
-  commands.
-- **`research`** — read-only (file reading, `grep_search`, web/URL fetch; no write
-  or command access). Use it when you specifically want a subagent that can't make
-  changes — investigation and read-only review.
+- **`self`** —— 你的完整克隆，拥有你的每个工具（包括 `write_to_file`/`replace_file_content`/`run_command`）。通用工作的安全默认：实现、修复、任何编辑文件或运行命令的事。
+- **`research`** —— 只读（文件读取、`grep_search`、网络/URL 抓取；无写入或命令访问）。当你特别想要一个不能改动的子代理时用它——调查和只读评审。
 
-Call `define_subagent` only for a custom system prompt or capability mix: set
-`enable_write_tools: true` to grant file edits **and** `run_command`,
-`enable_subagent_tools` for nested dispatch, `enable_mcp_tools` for MCP. Then
-invoke it by the name you gave it. (`manage_subagents` lists/kills running
-subagents.)
+只在需要自定义系统提示词或能力组合时调用 `define_subagent`：设 `enable_write_tools: true` 以授予文件编辑**和** `run_command`，`enable_subagent_tools` 用于嵌套分派，`enable_mcp_tools` 用于 MCP。然后用你给的名字调用它。（`manage_subagents` 列出/杀死运行中的子代理。）
 
-Skills dispatch with `Subagent (general-purpose):` and either reference a
-prompt-template file (e.g. `superpowers:subagent-driven-development`'s
-`./implementer-prompt.md`) or supply an inline prompt. On Antigravity:
+技能用 `Subagent (general-purpose):` 分派，要么引用一个提示词模板文件（例如 `superpowers:subagent-driven-development` 的 `./implementer-prompt.md`），要么提供内联提示词。在 Antigravity 上：
 
-| Skill dispatch form | Antigravity equivalent |
+| 技能分派形式 | Antigravity 等价物 |
 |---------------------|----------------------|
-| An implementer-style `*-prompt.md` template (writes code, runs tests) | Fill the template, then `invoke_subagent` with `TypeName: "self"` and the filled prompt |
-| A read-only reviewer template (`task-reviewer`, `code-reviewer`, `requesting-code-review`'s `./code-reviewer.md`) | `invoke_subagent` with `TypeName: "research"` and the filled review template |
-| Inline prompt (no template referenced) | `invoke_subagent` with `TypeName: "self"` (or `"research"` if the task only reads) and your inline prompt |
+| 实现者风格的 `*-prompt.md` 模板（写代码、跑测试） | 填充模板，然后用 `TypeName: "self"` 调用 `invoke_subagent` 并带填充后的提示词 |
+| 只读评审者模板（`task-reviewer`、`code-reviewer`、`requesting-code-review` 的 `./code-reviewer.md`） | 用 `TypeName: "research"` 调用 `invoke_subagent` 并带填充后的评审模板 |
+| 内联提示词（未引用模板） | 用 `TypeName: "self"`（或任务只读时用 `"research"`）调用 `invoke_subagent` 并带你的内联提示词 |
 
-### Prompt filling
+### 提示词填充
 
-Skills provide prompt templates with placeholders like `{WHAT_WAS_IMPLEMENTED}` or
-`[FULL TEXT of task]`. Fill all placeholders before passing the complete prompt to
-`invoke_subagent`. The prompt template itself contains the agent's role, review
-criteria, and expected output format — the subagent will follow it.
+技能提供带占位符的提示词模板，如 `{WHAT_WAS_IMPLEMENTED}` 或 `[FULL TEXT of task]`。在把完整提示词传给 `invoke_subagent` 之前填充所有占位符。提示词模板本身包含代理的角色、评审标准和期望的输出格式——子代理会遵循它。
 
-### Parallel dispatch
+### 并行分派
 
-Put multiple entries in a single `invoke_subagent` call's `Subagents` array to run
-independent subagent work in parallel. Keep dependent tasks sequential, but do not
-serialize independent subagent tasks just to preserve a simpler history.
+把多个条目放进单个 `invoke_subagent` 调用的 `Subagents` 数组以并行运行独立的子代理工作。保持依赖任务顺序，但不要为了保留更简单的历史而把独立的子代理任务串行化。
 
-## Task tracking
+## 任务跟踪
 
-Antigravity has **no todo / `TodoWrite` tool** (`manage_task` manages background
-processes — `list`/`kill`/`status`/`send_input` — it is *not* a checklist). When a
-skill says to create a todo list or track tasks, maintain a **task artifact**: a
-markdown checklist saved with `write_to_file` (`IsArtifact: true`,
-`ArtifactMetadata.ArtifactType: "task"`), edited with `replace_file_content` /
-`multi_replace_file_content` as you go.
+Antigravity **没有待办 / `TodoWrite` 工具**（`manage_task` 管理后台进程——`list`/`kill`/`status`/`send_input`——它*不是*清单）。当技能说创建待办列表或跟踪任务时，维护一个 **task artifact**：一个用 `write_to_file` 保存的 markdown 清单（`IsArtifact: true`、`ArtifactMetadata.ArtifactType: "task"`），随着推进用 `replace_file_content` / `multi_replace_file_content` 编辑。
 
-At the start of any multi-step task, create the task artifact listing every step of
-your plan. As you complete each step, edit the artifact to mark it done (`- [x]`).
-If the plan changes, update the checklist. Keep it current — it is your source of
-truth for what remains; once the conversation gets long, re-read it before starting
-each step.
+在任何多步任务开始时，创建 task artifact，列出你计划的每一步。完成每步后，编辑 artifact 标记完成（`- [x]`）。如果计划变了，更新清单。保持它最新——它是剩余工作的真相来源；一旦对话变长，在开始每步前重读它。

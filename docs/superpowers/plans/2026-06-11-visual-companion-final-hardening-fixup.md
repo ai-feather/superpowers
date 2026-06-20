@@ -1,82 +1,82 @@
-# Visual Companion Final Hardening Fixup Implementation Plan
+# 可视化伴侣最终加固修复实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **致代理型工作者：** 必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 按任务逐项实施本计划。步骤使用复选框（`- [ ]`）语法进行跟踪。
 
-**Goal:** Finish PR #1720's final hardening fixup with test-first changes, clean rebase state, and reviewer-ready evidence.
+**目标：** 以测试先行的改动完成 PR #1720 的最终加固修复，获得干净的 rebase 状态，以及可供审阅者查阅的证据。
 
-**Spec:** `docs/superpowers/specs/2026-06-11-visual-companion-final-hardening-fixup-design.md`
+**规格：** `docs/superpowers/specs/2026-06-11-visual-companion-final-hardening-fixup-design.md`
 
-**Architecture:** Keep the companion zero-dependency and local-first. Add focused guards to the existing server and shell scripts: root screen selection reuses the `/files/*` containment guard, fallback token handling tracks token source, and lifecycle shutdown uses a per-start command-line instance id for ownership proof.
+**架构：** 保持伴侣零依赖且本地优先。向现有服务器和 shell 脚本添加聚焦的防护：根屏幕选择复用 `/files/*` 包含防护，回退 token 处理跟踪 token 来源，生命周期关闭使用每次启动的命令行实例 id 作为所有权证明。
 
-**Tech Stack:** Node.js built-ins (`http`, `fs`, `path`, `crypto`), existing `ws` test dependency, Bash scripts, Git Bash on Windows, `gh` CLI for PR metadata.
+**技术栈：** Node.js 内置模块（`http`、`fs`、`path`、`crypto`）、现有 `ws` 测试依赖、Bash 脚本、Windows 上的 Git Bash、用于 PR 元数据的 `gh` CLI。
 
-**Commit discipline:** Each task includes a suggested commit. When using subagent-driven execution, the orchestrator reviews the worker diff, runs the task verification, and performs the commit.
+**提交纪律：** 每个任务都包含建议的提交。使用子代理驱动执行时，编排者审阅工作者 diff、运行任务验证并执行提交。
 
 ---
 
-## File Map
+## 文件清单
 
-- Modify: `skills/brainstorming/scripts/server.cjs`
-  - Filter root screen candidates through `isRegularFileInsideContentDir()`.
-  - Track token source and rotate or fail closed on fallback.
-- Modify: `skills/brainstorming/scripts/start-server.sh`
-  - Generate `state/server-instance-id`.
-  - Pass `--brainstorm-server-id=<id>` after `server.cjs`.
-- Modify: `skills/brainstorming/scripts/stop-server.sh`
-  - Require exact instance-id argv proof before signalling a PID.
-  - Remove stale `server.pid` and `server-instance-id` on stale/stopped outcomes.
-- Modify: `tests/brainstorm-server/server.test.js`
-  - Add fixed-port startup guard.
-  - Add skip-aware test harness for symlink capability.
-  - Add root symlink and hardlink escape regressions.
-- Modify: `tests/brainstorm-server/auth.test.js`
-  - Add fixed-port startup guard.
-- Modify: `tests/brainstorm-server/lifecycle.test.js`
-  - Add fallback token rotation, explicit-token fail-closed, and fallback-key rejection regressions.
-- Modify: `tests/brainstorm-server/stop-server.test.sh`
-  - Add top-level cleanup trap.
-  - Add positive and negative server-instance-id ownership tests.
-- Modify: `tests/brainstorm-server/start-server.test.sh`
-  - Assert Windows-like fake-node path receives exact server id argv and writes a valid id file.
-- Modify: `tests/brainstorm-server/windows-lifecycle.test.sh`
-  - Pass server id argv for direct Node stop-server coverage.
-  - Add Windows fake-node assertion for the id argv.
-- Modify: `skills/brainstorming/visual-companion.md`
-  - Add `--open` to platform commands that should preserve auto-open behavior.
-- Modify: `docs/superpowers/plans/2026-06-09-visual-companion-issues.md`
-  - Reconcile shipped scope, WS Origin wording, default timeout, and deferred feature items.
-- Update outside tracked files: PR #1720 body
-  - Record post-rebase diff state, RED/GREEN evidence, macOS/Windows verification, manual browser smoke, and external eval evidence.
+- 修改：`skills/brainstorming/scripts/server.cjs`
+  - 通过 `isRegularFileInsideContentDir()` 过滤根屏幕候选项。
+  - 跟踪 token 来源，并在回退时轮换或失败关闭。
+- 修改：`skills/brainstorming/scripts/start-server.sh`
+  - 生成 `state/server-instance-id`。
+  - 在 `server.cjs` 之后传入 `--brainstorm-server-id=<id>`。
+- 修改：`skills/brainstorming/scripts/stop-server.sh`
+  - 在向 PID 发信号之前要求精确的 instance-id argv 证明。
+  - 在 stale/stopped 结果上移除陈旧的 `server.pid` 和 `server-instance-id`。
+- 修改：`tests/brainstorm-server/server.test.js`
+  - 添加固定端口启动防护。
+  - 添加支持跳过的符号链接能力测试 harness。
+  - 添加根符号链接与硬链接逃逸回归测试。
+- 修改：`tests/brainstorm-server/auth.test.js`
+  - 添加固定端口启动防护。
+- 修改：`tests/brainstorm-server/lifecycle.test.js`
+  - 添加回退 token 轮换、显式 token 失败关闭、回退键拒绝的回归测试。
+- 修改：`tests/brainstorm-server/stop-server.test.sh`
+  - 添加顶层清理 trap。
+  - 添加正向和负向的 server-instance-id 所有权测试。
+- 修改：`tests/brainstorm-server/start-server.test.sh`
+  - 断言类 Windows 的 fake-node 路径接收到确切的 server id argv，并写入有效的 id 文件。
+- 修改：`tests/brainstorm-server/windows-lifecycle.test.sh`
+  - 为直接 Node stop-server 覆盖传入 server id argv。
+  - 添加针对该 id argv 的 Windows fake-node 断言。
+- 修改：`skills/brainstorming/visual-companion.md`
+  - 在应保留自动打开行为的平台命令中加入 `--open`。
+- 修改：`docs/superpowers/plans/2026-06-09-visual-companion-issues.md`
+  - 核对已交付范围、WS Origin 措辞、默认超时和延期功能项。
+- 在受跟踪文件之外更新：PR #1720 正文
+  - 记录 rebase 后的 diff 状态、RED/GREEN 证据、macOS/Windows 验证、手动浏览器冒烟和外部 eval 证据。
 
-## Task 0: Rebase And Baseline State
+## Task 0：Rebase 与基线状态
 
-**Files:**
-- No source edits
-- Verification target: git branch state
+**文件：**
+- 无源码改动
+- 验证目标：git 分支状态
 
-- [ ] **Step 1: Fetch current dev**
+- [ ] **Step 1：拉取当前 dev**
 
-Run:
+运行：
 
 ```bash
 git fetch origin dev
 ```
 
-Expected: command exits 0.
+预期：命令以 0 退出。
 
-- [ ] **Step 2: Rebase onto current dev**
+- [ ] **Step 2：Rebase 到当前 dev**
 
-Run:
+运行：
 
 ```bash
 git rebase origin/dev
 ```
 
-Expected: command exits 0, or stops only on conflicts that must be resolved by taking `origin/dev` for `evals`.
+预期：命令以 0 退出，或仅在需要解决的冲突处停下，对于 `evals` 必须采用 `origin/dev` 的版本。
 
-- [ ] **Step 3: Resolve an evals conflict by taking dev**
+- [ ] **Step 3：通过采用 dev 解决 evals 冲突**
 
-If the rebase stops on `evals`, run:
+如果 rebase 停在 `evals`，运行：
 
 ```bash
 git restore --source=origin/dev --staged --worktree evals
@@ -84,28 +84,28 @@ git add evals
 git rebase --continue
 ```
 
-Expected: rebase continues. After the rebase, `git diff --name-only origin/dev...HEAD -- evals` prints nothing.
+预期：rebase 继续。rebase 完成后，`git diff --name-only origin/dev...HEAD -- evals` 不打印任何内容。
 
-- [ ] **Step 4: Record baseline status**
+- [ ] **Step 4：记录基线状态**
 
-Run:
+运行：
 
 ```bash
 git status --short --branch
 git diff --name-only origin/dev...HEAD -- evals
 ```
 
-Expected: status shows the branch on top of `origin/dev`; second command prints no paths.
+预期：状态显示分支位于 `origin/dev` 之上；第二条命令不打印任何路径。
 
-## Task 1: Root Screen Containment
+## Task 1：根屏幕包含
 
-**Files:**
-- Modify: `tests/brainstorm-server/server.test.js`
-- Modify: `skills/brainstorming/scripts/server.cjs`
+**文件：**
+- 修改：`tests/brainstorm-server/server.test.js`
+- 修改：`skills/brainstorming/scripts/server.cjs`
 
-- [ ] **Step 1: Add fixed-port guard and skip-aware test helper**
+- [ ] **Step 1：添加固定端口防护和支持跳过的测试 helper**
 
-In `tests/brainstorm-server/server.test.js`, add this helper after `waitForServer()`:
+在 `tests/brainstorm-server/server.test.js` 中，在 `waitForServer()` 之后添加此 helper：
 
 ```js
 class SkipTest extends Error {
@@ -146,7 +146,7 @@ function ensureSymlinkWorks(target, link) {
 }
 ```
 
-Then change the startup section from:
+然后将启动段从：
 
 ```js
   const { stdout: initialStdout } = await waitForServer(server);
@@ -154,7 +154,7 @@ Then change the startup section from:
   let failed = 0;
 ```
 
-to:
+改为：
 
 ```js
   const { stdout: initialStdout } = await waitForServer(server);
@@ -164,7 +164,7 @@ to:
   let skipped = 0;
 ```
 
-Change the `test()` helper catch block to handle skips:
+修改 `test()` helper 的 catch 块以处理跳过：
 
 ```js
     }).catch(e => {
@@ -180,15 +180,15 @@ Change the `test()` helper catch block to handle skips:
     });
 ```
 
-Change the summary line to:
+将汇总行改为：
 
 ```js
     console.log(`\n--- Results: ${passed} passed, ${failed} failed, ${skipped} skipped ---`);
 ```
 
-- [ ] **Step 2: Make the existing `/files/*` symlink test skip-capable**
+- [ ] **Step 2：让现有 `/files/*` 符号链接测试支持跳过**
 
-Replace the setup inside `does not serve symlinks that escape content dir via /files/` with:
+将 `does not serve symlinks that escape content dir via /files/` 内部的设置替换为：
 
 ```js
       const target = path.join(STATE_DIR, 'server-info');
@@ -198,11 +198,11 @@ Replace the setup inside `does not serve symlinks that escape content dir via /f
       fs.symlinkSync(target, link);
 ```
 
-Expected behavior: hosts that cannot create usable symlinks skip only this assertion.
+预期行为：无法创建可用符号链接的主机仅跳过此断言。
 
-- [ ] **Step 3: Add RED tests for root symlink and hardlink escapes**
+- [ ] **Step 3：为根符号链接和硬链接逃逸添加 RED 测试**
 
-Add these tests after the existing `/files/*` hardlink test:
+在现有 `/files/*` 硬链接测试之后添加这些测试：
 
 ```js
     await test('does not serve symlinks that escape content dir via root screen selection', async () => {
@@ -245,20 +245,20 @@ Add these tests after the existing `/files/*` hardlink test:
     });
 ```
 
-- [ ] **Step 4: Verify RED**
+- [ ] **Step 4：验证 RED**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/.codex/worktrees/59f6/superpowers/tests/brainstorm-server
 node server.test.js
 ```
 
-Expected: at least one new root containment test fails before the production fix because root screen selection can read `state/server-info`.
+预期：在生产修复之前，至少有一个新的根包含测试失败，因为根屏幕选择可以读取 `state/server-info`。
 
-- [ ] **Step 5: Implement root containment**
+- [ ] **Step 5：实现根包含**
 
-In `skills/brainstorming/scripts/server.cjs`, replace `getNewestScreen()` with:
+在 `skills/brainstorming/scripts/server.cjs` 中，将 `getNewestScreen()` 替换为：
 
 ```js
 function getNewestScreen() {
@@ -275,35 +275,35 @@ function getNewestScreen() {
 }
 ```
 
-- [ ] **Step 6: Verify GREEN**
+- [ ] **Step 6：验证 GREEN**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/.codex/worktrees/59f6/superpowers/tests/brainstorm-server
 node server.test.js
 ```
 
-Expected: root symlink and supported hardlink tests pass or skip only for unsupported host capabilities. Existing `/files/*` containment tests remain green.
+预期：根符号链接和受支持的硬链接测试通过，或仅在不支持的主机能力下跳过。现有 `/files/*` 包含测试保持通过。
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7：提交**
 
-Run:
+运行：
 
 ```bash
 git add tests/brainstorm-server/server.test.js skills/brainstorming/scripts/server.cjs
 git commit -m "Harden root screen containment"
 ```
 
-## Task 2: Fallback Token Isolation
+## Task 2：回退 Token 隔离
 
-**Files:**
-- Modify: `tests/brainstorm-server/lifecycle.test.js`
-- Modify: `skills/brainstorming/scripts/server.cjs`
+**文件：**
+- 修改：`tests/brainstorm-server/lifecycle.test.js`
+- 修改：`skills/brainstorming/scripts/server.cjs`
 
-- [ ] **Step 1: Add HTTP status helper**
+- [ ] **Step 1：添加 HTTP 状态 helper**
 
-In `tests/brainstorm-server/lifecycle.test.js`, add this helper after `openCaptureCommand()`:
+在 `tests/brainstorm-server/lifecycle.test.js` 中，在 `openCaptureCommand()` 之后添加此 helper：
 
 ```js
 function httpStatus(port, key) {
@@ -319,9 +319,9 @@ function httpStatus(port, key) {
 }
 ```
 
-- [ ] **Step 2: Add RED test for persisted-token fallback rotation**
+- [ ] **Step 2：为持久化 token 回退轮换添加 RED 测试**
 
-Add this test after `falls back to a random port when the preferred port is taken`:
+在 `falls back to a random port when the preferred port is taken` 之后添加此测试：
 
 ```js
   await test('fallback with persisted token generates a fresh unpersisted key', async () => {
@@ -376,9 +376,9 @@ Add this test after `falls back to a random port when the preferred port is take
   });
 ```
 
-- [ ] **Step 3: Add RED test for explicit-token fallback fail-closed**
+- [ ] **Step 3：为显式 token 回退失败关闭添加 RED 测试**
 
-Add this test immediately after the persisted-token fallback test:
+在持久化 token 回退测试之后立即添加此测试：
 
 ```js
   await test('fallback with explicit BRAINSTORM_TOKEN fails closed', async () => {
@@ -429,20 +429,20 @@ Add this test immediately after the persisted-token fallback test:
   });
 ```
 
-- [ ] **Step 4: Verify RED**
+- [ ] **Step 4：验证 RED**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/.codex/worktrees/59f6/superpowers/tests/brainstorm-server
 node lifecycle.test.js
 ```
 
-Expected: persisted-token fallback test fails because fallback reuses `.last-token`, and explicit-token fallback test fails because fallback currently starts.
+预期：持久化 token 回退测试失败，因为回退复用 `.last-token`；显式 token 回退测试失败，因为回退当前会启动。
 
-- [ ] **Step 5: Track token source in production code**
+- [ ] **Step 5：在生产代码中跟踪 token 来源**
 
-In `skills/brainstorming/scripts/server.cjs`, replace the current `const TOKEN = (() => { ... })();` block with:
+在 `skills/brainstorming/scripts/server.cjs` 中，将当前的 `const TOKEN = (() => { ... })();` 块替换为：
 
 ```js
 function generateToken() {
@@ -467,9 +467,9 @@ let TOKEN = tokenInfo.value;
 let tokenSource = tokenInfo.source;
 ```
 
-- [ ] **Step 6: Rotate or fail closed on EADDRINUSE fallback**
+- [ ] **Step 6：在 EADDRINUSE 回退时轮换或失败关闭**
 
-In the `server.on('error', ...)` handler, replace the `EADDRINUSE` branch with:
+在 `server.on('error', ...)` 处理器中，将 `EADDRINUSE` 分支替换为：
 
 ```js
     if (err.code === 'EADDRINUSE' && !triedFallback) {
@@ -487,36 +487,36 @@ In the `server.on('error', ...)` handler, replace the `EADDRINUSE` branch with:
     } else {
 ```
 
-- [ ] **Step 7: Verify GREEN**
+- [ ] **Step 7：验证 GREEN**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/.codex/worktrees/59f6/superpowers/tests/brainstorm-server
 node lifecycle.test.js
 ```
 
-Expected: all lifecycle tests pass, including fallback token rotation and explicit-token fail-closed.
+预期：所有生命周期测试通过，包括回退 token 轮换和显式 token 失败关闭。
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 8：提交**
 
-Run:
+运行：
 
 ```bash
 git add tests/brainstorm-server/lifecycle.test.js skills/brainstorming/scripts/server.cjs
 git commit -m "Isolate companion fallback tokens"
 ```
 
-## Task 3: Stop-Server Instance-Id Ownership
+## Task 3：Stop-Server 的 Instance-Id 所有权
 
-**Files:**
-- Modify: `tests/brainstorm-server/stop-server.test.sh`
-- Modify: `skills/brainstorming/scripts/start-server.sh`
-- Modify: `skills/brainstorming/scripts/stop-server.sh`
+**文件：**
+- 修改：`tests/brainstorm-server/stop-server.test.sh`
+- 修改：`skills/brainstorming/scripts/start-server.sh`
+- 修改：`skills/brainstorming/scripts/stop-server.sh`
 
-- [ ] **Step 1: Add cleanup tracking and id helpers to stop-server tests**
+- [ ] **Step 1：向 stop-server 测试添加清理跟踪和 id helper**
 
-In `tests/brainstorm-server/stop-server.test.sh`, after `PASS=0; FAIL=0`, add:
+在 `tests/brainstorm-server/stop-server.test.sh` 中，在 `PASS=0; FAIL=0` 之后添加：
 
 ```bash
 PIDS=()
@@ -540,14 +540,13 @@ new_server_id() {
 }
 ```
 
-When each test creates a `SESS="$(mktemp -d)"`, immediately add:
+当每个测试创建 `SESS="$(mktemp -d)"` 时，立即添加：
 
 ```bash
 track_dir "$SESS"
 ```
 
-When a test starts `UNRELATED`, `SRV`, or `IMPOSTOR`, immediately add the
-matching tracking call:
+当测试启动 `UNRELATED`、`SRV` 或 `IMPOSTOR` 时，立即添加对应的跟踪调用：
 
 ```bash
 track_pid "$UNRELATED"
@@ -555,9 +554,9 @@ track_pid "$SRV"
 track_pid "$IMPOSTOR"
 ```
 
-- [ ] **Step 2: Add RED ownership tests**
+- [ ] **Step 2：添加 RED 所有权测试**
 
-Replace the current real-server and impostor sections with these cases:
+将当前的真实服务器和冒名者段落替换为以下用例：
 
 ```bash
 # --- Test 2: a real brainstorm server with matching instance id IS stopped ---
@@ -638,28 +637,28 @@ else
 fi
 ```
 
-Keep the unrelated PID and missing PID tests.
+保留无关 PID 和缺失 PID 的测试。
 
-- [ ] **Step 3: Verify RED**
+- [ ] **Step 3：验证 RED**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/.codex/worktrees/59f6/superpowers
 bash tests/brainstorm-server/stop-server.test.sh
 ```
 
-Expected: matching-instance-id real server is reported `stale_pid` before implementation, and one of the impostor cases may be killed by the old command-name proof.
+预期：在实现之前，匹配 instance id 的真实服务器被报告为 `stale_pid`，且其中一个冒名者用例可能被旧的命令名证明杀死。
 
-- [ ] **Step 4: Generate and pass instance id in start-server**
+- [ ] **Step 4：在 start-server 中生成并传入 instance id**
 
-In `skills/brainstorming/scripts/start-server.sh`, after `LOG_FILE="${STATE_DIR}/server.log"`, add:
+在 `skills/brainstorming/scripts/start-server.sh` 中，在 `LOG_FILE="${STATE_DIR}/server.log"` 之后添加：
 
 ```bash
 SERVER_ID_FILE="${STATE_DIR}/server-instance-id"
 ```
 
-After `mkdir -p "${SESSION_DIR}/content" "$STATE_DIR"`, add:
+在 `mkdir -p "${SESSION_DIR}/content" "$STATE_DIR"` 之后添加：
 
 ```bash
 SERVER_ID=""
@@ -673,27 +672,27 @@ printf '%s\n' "$SERVER_ID" > "$SERVER_ID_FILE"
 chmod 600 "$SERVER_ID_FILE" 2>/dev/null || true
 ```
 
-Update both Node launch commands to pass the argv:
+将两条 Node 启动命令更新为传入 argv：
 
 ```bash
 env BRAINSTORM_DIR="$SESSION_DIR" BRAINSTORM_HOST="$BIND_HOST" BRAINSTORM_URL_HOST="$URL_HOST" BRAINSTORM_OWNER_PID="$OWNER_PID" node server.cjs "--brainstorm-server-id=$SERVER_ID" &
 ```
 
-and:
+以及：
 
 ```bash
 nohup env BRAINSTORM_DIR="$SESSION_DIR" BRAINSTORM_HOST="$BIND_HOST" BRAINSTORM_URL_HOST="$URL_HOST" BRAINSTORM_OWNER_PID="$OWNER_PID" node server.cjs "--brainstorm-server-id=$SERVER_ID" > "$LOG_FILE" 2>&1 &
 ```
 
-- [ ] **Step 5: Require instance id in stop-server**
+- [ ] **Step 5：在 stop-server 中要求 instance id**
 
-In `skills/brainstorming/scripts/stop-server.sh`, add:
+在 `skills/brainstorming/scripts/stop-server.sh` 中，添加：
 
 ```bash
 SERVER_ID_FILE="${STATE_DIR}/server-instance-id"
 ```
 
-Replace `is_brainstorm_server()` with:
+将 `is_brainstorm_server()` 替换为：
 
 ```bash
 read_expected_server_id() {
@@ -742,48 +741,48 @@ is_brainstorm_server() {
 }
 ```
 
-In the stale PID branch, remove both metadata files:
+在 stale PID 分支中，移除两个元数据文件：
 
 ```bash
     rm -f "$PID_FILE" "$SERVER_ID_FILE"
 ```
 
-In the stopped branch, change the cleanup line to:
+在 stopped 分支中，将清理行改为：
 
 ```bash
   rm -f "$PID_FILE" "$SERVER_ID_FILE" "${STATE_DIR}/server.log"
 ```
 
-- [ ] **Step 6: Verify GREEN**
+- [ ] **Step 6：验证 GREEN**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/.codex/worktrees/59f6/superpowers
 bash tests/brainstorm-server/stop-server.test.sh
 ```
 
-Expected: real matching-id server stops, impostors survive, and all stale cases return `stale_pid`.
+预期：真实匹配 id 的服务器停止，冒名者存活，所有 stale 用例返回 `stale_pid`。
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7：提交**
 
-Run:
+运行：
 
 ```bash
 git add tests/brainstorm-server/stop-server.test.sh skills/brainstorming/scripts/start-server.sh skills/brainstorming/scripts/stop-server.sh
 git commit -m "Harden companion stop ownership proof"
 ```
 
-## Task 4: Platform And Fixed-Port Test Hardening
+## Task 4：平台与固定端口测试加固
 
-**Files:**
-- Modify: `tests/brainstorm-server/auth.test.js`
-- Modify: `tests/brainstorm-server/start-server.test.sh`
-- Modify: `tests/brainstorm-server/windows-lifecycle.test.sh`
+**文件：**
+- 修改：`tests/brainstorm-server/auth.test.js`
+- 修改：`tests/brainstorm-server/start-server.test.sh`
+- 修改：`tests/brainstorm-server/windows-lifecycle.test.sh`
 
-- [ ] **Step 1: Add fixed-port guard to auth tests**
+- [ ] **Step 1：向 auth 测试添加固定端口防护**
 
-In `tests/brainstorm-server/auth.test.js`, add this helper after `waitForServer()`:
+在 `tests/brainstorm-server/auth.test.js` 中，在 `waitForServer()` 之后添加此 helper：
 
 ```js
 function serverStartedMessage(out) {
@@ -803,26 +802,26 @@ function assertStartedOnExpectedPort(out) {
 }
 ```
 
-After `const { stdout: initialStdout } = await waitForServer(server);`, add:
+在 `const { stdout: initialStdout } = await waitForServer(server);` 之后添加：
 
 ```js
   assertStartedOnExpectedPort(initialStdout);
 ```
 
-- [ ] **Step 2: Verify auth fixed-port guard**
+- [ ] **Step 2：验证 auth 固定端口防护**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/.codex/worktrees/59f6/superpowers/tests/brainstorm-server
 node auth.test.js
 ```
 
-Expected: auth tests pass on a free `3335`, and would fail clearly if fallback occurred.
+预期：auth 测试在空闲的 `3335` 上通过，并在发生回退时明确失败。
 
-- [ ] **Step 3: Add start-server id argv assertion**
+- [ ] **Step 3：添加 start-server id argv 断言**
 
-In `tests/brainstorm-server/start-server.test.sh`, change the first fake node body to:
+在 `tests/brainstorm-server/start-server.test.sh` 中，将第一个 fake node 主体改为：
 
 ```bash
 cat > "$TEST_DIR/fake-bin/node" <<'EOF'
@@ -833,7 +832,7 @@ exit 0
 EOF
 ```
 
-After the owner PID assertion, add:
+在 owner PID 断言之后添加：
 
 ```bash
 captured_argv=$(echo "$captured" | grep "CAPTURED_ARGV=" | head -1 | sed 's/CAPTURED_ARGV=//')
@@ -857,9 +856,9 @@ else
 fi
 ```
 
-- [ ] **Step 4: Add Windows lifecycle id argv assertions**
+- [ ] **Step 4：添加 Windows 生命周期 id argv 断言**
 
-In `tests/brainstorm-server/windows-lifecycle.test.sh`, change the Test 2 fake node body to:
+在 `tests/brainstorm-server/windows-lifecycle.test.sh` 中，将 Test 2 的 fake node 主体改为：
 
 ```bash
 cat > "$FAKE_NODE_DIR/node" <<'FAKENODE'
@@ -870,7 +869,7 @@ exit 0
 FAKENODE
 ```
 
-After the owner PID check in Test 2, add:
+在 Test 2 的 owner PID 检查之后添加：
 
 ```bash
 captured_argv=$(echo "$captured" | grep "CAPTURED_ARGV=" | head -1 | sed 's/CAPTURED_ARGV=//')
@@ -882,51 +881,51 @@ else
 fi
 ```
 
-In Test 6, before launching direct Node, add:
+在 Test 6 中，启动直接 Node 之前，添加：
 
 ```bash
 STOP_TEST_ID="$(printf 'windowsstop%021d\n' "$RANDOM")"
 printf '%s\n' "$STOP_TEST_ID" > "$TEST_DIR/stop-test/state/server-instance-id"
 ```
 
-Change the direct Node launch in Test 6 to:
+将 Test 6 中的直接 Node 启动改为：
 
 ```bash
   node "$SERVER_SCRIPT" "--brainstorm-server-id=$STOP_TEST_ID" > "$TEST_DIR/stop-test/.server.log" 2>&1 &
 ```
 
-- [ ] **Step 5: Verify platform tests**
+- [ ] **Step 5：验证平台测试**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/.codex/worktrees/59f6/superpowers
 bash tests/brainstorm-server/start-server.test.sh
 ```
 
-Expected: all start-server shell tests pass on macOS.
+预期：所有 start-server shell 测试在 macOS 上通过。
 
-Run the Windows lifecycle test later on `ballmer` as part of Task 6.
+Windows 生命周期测试稍后在 `ballmer` 上作为 Task 6 的一部分运行。
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6：提交**
 
-Run:
+运行：
 
 ```bash
 git add tests/brainstorm-server/auth.test.js tests/brainstorm-server/start-server.test.sh tests/brainstorm-server/windows-lifecycle.test.sh
 git commit -m "Harden companion platform tests"
 ```
 
-## Task 5: Docs And PR Consistency
+## Task 5：文档与 PR 一致性
 
-**Files:**
-- Modify: `skills/brainstorming/visual-companion.md`
-- Modify: `docs/superpowers/plans/2026-06-09-visual-companion-issues.md`
-- Update: PR #1720 body through `gh pr edit`
+**文件：**
+- 修改：`skills/brainstorming/visual-companion.md`
+- 修改：`docs/superpowers/plans/2026-06-09-visual-companion-issues.md`
+- 更新：通过 `gh pr edit` 更新 PR #1720 正文
 
-- [ ] **Step 1: Keep platform start commands aligned with auto-open behavior**
+- [ ] **Step 1：保持平台启动命令与自动打开行为一致**
 
-In `skills/brainstorming/visual-companion.md`, update platform-specific commands that start a user-approved companion session so they include `--open`:
+在 `skills/brainstorming/visual-companion.md` 中，更新启动用户批准的伴侣会话的平台特定命令，使其包含 `--open`：
 
 ```bash
 scripts/start-server.sh --project-dir /path/to/project --open
@@ -936,11 +935,11 @@ scripts/start-server.sh --project-dir /path/to/project --open
 scripts/start-server.sh --project-dir /path/to/project --open --foreground
 ```
 
-Do not add `--open` to remote bind examples where auto-open is intentionally skipped.
+不要在有意跳过自动打开的远程绑定示例中添加 `--open`。
 
-- [ ] **Step 2: Reconcile issue catalog disposition rows**
+- [ ] **Step 2：核对问题目录处置行**
 
-In `docs/superpowers/plans/2026-06-09-visual-companion-issues.md`, replace the disposition rows for A2, D1, D2, D3, and D4 with:
+在 `docs/superpowers/plans/2026-06-09-visual-companion-issues.md` 中，将 A2、D1、D2、D3 和 D4 的处置行替换为：
 
 ```markdown
 | A2 | Host allowlist; browser WS Origin check | PRs #1110/#1553 | Host allowlist dropped; WS Origin check retained after auth for browser confused-deputy defense |
@@ -950,62 +949,62 @@ In `docs/superpowers/plans/2026-06-09-visual-companion-issues.md`, replace the d
 | D4 | Light/dark contrast helpers in the frame | PR #1683 | Deferred - not in PR #1720 |
 ```
 
-- [ ] **Step 3: Reconcile A2 detail text**
+- [ ] **Step 3：核对 A2 细节文本**
 
-Replace the final sentence in the A2 section with:
+将 A2 段落的最后一句话替换为：
 
 ```markdown
 No `BRAINSTORM_ALLOWED_HOSTS` and no Host allowlist. The final implementation still checks browser WebSocket `Origin` after session auth so a cross-origin localhost tab cannot ride the companion cookie.
 ```
 
-- [ ] **Step 4: Reconcile timeout and feature grouping text**
+- [ ] **Step 4：核对超时和功能分组文本**
 
-In the C1 section, replace:
+在 C1 段落中，将：
 
 ```markdown
 - Raise the default (about 2h) and make it configurable:
 ```
 
-with:
+替换为：
 
 ```markdown
 - Raise the default to 4 hours and make it configurable:
 ```
 
-In the suggested grouping section, replace item 4 with:
+在建议分组段落中，将第 4 项替换为：
 
 ```markdown
 4. **Deferred feature pass** - D1, D2, D4 are not part of PR #1720. D3 is shipped through the `--open` flow.
 ```
 
-- [ ] **Step 5: Verify docs diff**
+- [ ] **Step 5：验证文档 diff**
 
-Run:
+运行：
 
 ```bash
 git diff -- skills/brainstorming/visual-companion.md docs/superpowers/plans/2026-06-09-visual-companion-issues.md
 ```
 
-Expected: diff only updates auto-open command consistency, shipped/deferred dispositions, WS Origin wording, and the 4 hour timeout statement.
+预期：diff 仅更新自动打开命令一致性、已交付/延期处置、WS Origin 措辞，以及 4 小时超时陈述。
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6：提交**
 
-Run:
+运行：
 
 ```bash
 git add skills/brainstorming/visual-companion.md docs/superpowers/plans/2026-06-09-visual-companion-issues.md
 git commit -m "Align visual companion docs with shipped scope"
 ```
 
-## Task 6: Full Verification And Evidence
+## Task 6：完整验证与证据
 
-**Files:**
-- No required source edits
-- Update: PR #1720 body
+**文件：**
+- 无必需源码改动
+- 更新：PR #1720 正文
 
-- [ ] **Step 1: Run focused macOS checks**
+- [ ] **Step 1：运行聚焦的 macOS 检查**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/.codex/worktrees/59f6/superpowers/tests/brainstorm-server
@@ -1016,22 +1015,22 @@ bash stop-server.test.sh
 bash start-server.test.sh
 ```
 
-Expected: all focused tests pass; symlink-only tests may report skipped only when host support is unavailable.
+预期：所有聚焦测试通过；仅在主机不支持时，符号链接专属测试可能报告跳过。
 
-- [ ] **Step 2: Run full macOS test suite**
+- [ ] **Step 2：运行完整 macOS 测试套件**
 
-Run:
+运行：
 
 ```bash
 cd /Users/drewritter/.codex/worktrees/59f6/superpowers/tests/brainstorm-server
 npm test
 ```
 
-Expected: full brainstorm-server test suite passes.
+预期：完整 brainstorm-server 测试套件通过。
 
-- [ ] **Step 3: Run static checks**
+- [ ] **Step 3：运行静态检查**
 
-Run from repo root:
+从仓库根目录运行：
 
 ```bash
 git diff --check
@@ -1040,11 +1039,11 @@ node --check skills/brainstorming/scripts/helper.js
 bash scripts/lint-shell.sh skills/brainstorming/scripts/start-server.sh skills/brainstorming/scripts/stop-server.sh tests/brainstorm-server/start-server.test.sh tests/brainstorm-server/stop-server.test.sh tests/brainstorm-server/windows-lifecycle.test.sh
 ```
 
-Expected: all commands exit 0.
+预期：所有命令以 0 退出。
 
-- [ ] **Step 4: Run Windows validation on ballmer**
+- [ ] **Step 4：在 ballmer 上运行 Windows 验证**
 
-Copy or fetch the rebased branch on `ballmer`, then run:
+在 `ballmer` 上复制或拉取已 rebase 的分支，然后运行：
 
 ```bash
 cd superpowers
@@ -1053,74 +1052,74 @@ npm --prefix tests/brainstorm-server test
 bash tests/brainstorm-server/windows-lifecycle.test.sh
 ```
 
-Expected: full runnable Windows suite passes. If Git Bash lacks `lsof`, only the lsof-specific legacy port-cross-check test may skip; instance-id stop tests must still pass.
+预期：完整可运行的 Windows 套件通过。如果 Git Bash 缺少 `lsof`，仅 lsof 专属的遗留端口交叉检查测试可能跳过；instance-id 停止测试仍必须通过。
 
-- [ ] **Step 5: Verify PR diff and GitHub state**
+- [ ] **Step 5：验证 PR diff 与 GitHub 状态**
 
-Run:
+运行：
 
 ```bash
 git diff --quiet origin/dev...HEAD -- evals
 gh pr view 1720 --json mergeStateStatus,statusCheckRollup,headRefOid
 ```
 
-Expected: first command exits 0. PR JSON no longer reports `DIRTY` or `CONFLICTING` after the branch is pushed.
+预期：第一条命令以 0 退出。分支推送后 PR JSON 不再报告 `DIRTY` 或 `CONFLICTING`。
 
-- [ ] **Step 6: Collect external eval evidence**
+- [ ] **Step 6：收集外部 eval 证据**
 
-Run:
+运行：
 
 ```bash
 git -C /Users/drewritter/.codex/worktrees/59f6/superpowers-evals rev-parse HEAD
 git -C /Users/drewritter/.codex/worktrees/59f6/superpowers-evals status --short --branch
 ```
 
-If the eval worktree is not at that path, run the same commands in `/Users/drewritter/prime-rad/superpowers-evals`.
+如果 eval worktree 不在该路径，在 `/Users/drewritter/prime-rad/superpowers-evals` 中运行相同命令。
 
-Record the exact eval scenario path, command, result artifact path, and RED/GREEN outcome from the already-run eval evidence. Do not claim the eval submodule is included in PR #1720.
+从已运行的 eval 证据中记录确切的 eval 场景路径、命令、结果产物路径和 RED/GREEN 结果。不要声称 eval 子模块包含在 PR #1720 中。
 
-- [ ] **Step 7: Run final manual/browser smoke**
+- [ ] **Step 7：运行最终手动/浏览器冒烟**
 
-After automated tests are green, start the companion with `--open`, push a small screen, verify the browser reaches a bare `/` URL after bootstrap, verify status reaches Connected, stop and restart the server with the same project dir, and verify the open tab reconnects. Record the exact commands and observed result.
+在自动化测试通过后，使用 `--open` 启动伴侣、推送一个小屏幕、验证浏览器在 bootstrap 后到达裸 `/` URL、验证状态到达 Connected、使用相同项目目录停止并重启服务器、验证打开的标签页重新连接。记录确切的命令和观察到的结果。
 
-- [ ] **Step 8: Update PR body**
+- [ ] **Step 8：更新 PR 正文**
 
-Prepare `/tmp/pr-1720-body.md`, then run `gh pr edit 1720 --body-file /tmp/pr-1720-body.md` after the body includes:
+准备 `/tmp/pr-1720-body.md`，然后在该正文包含以下内容后运行 `gh pr edit 1720 --body-file /tmp/pr-1720-body.md`：
 
-- model, harness, plugins, and Drew as human reviewer
-- duplicate/related PR search results
-- exact post-rebase note that `evals` is absent from this PR diff
-- focused RED/GREEN evidence table
-- macOS `npm test` evidence
-- Windows `ballmer` evidence
-- manual/browser smoke evidence
-- external eval repo commit, scenario path, command, artifact path, and outcome
+- 模型、宿主、插件，以及 Drew 作为人类审阅者
+- 重复/相关 PR 搜索结果
+- rebase 后明确说明 `evals` 不在本 PR diff 中
+- 聚焦的 RED/GREEN 证据表
+- macOS `npm test` 证据
+- Windows `ballmer` 证据
+- 手动/浏览器冒烟证据
+- 外部 eval 仓库提交、场景路径、命令、产物路径和结果
 
-- [ ] **Step 9: Push branch**
+- [ ] **Step 9：推送分支**
 
-Run:
+运行：
 
 ```bash
 git status --short --branch
 git push origin brainstorming-companion
 ```
 
-Expected: push succeeds and PR #1720 updates.
+预期：推送成功且 PR #1720 更新。
 
-- [ ] **Step 10: Final PR readiness check**
+- [ ] **Step 10：最终 PR 就绪检查**
 
-Run:
+运行：
 
 ```bash
 gh pr view 1720 --json mergeStateStatus,statusCheckRollup,headRefOid,url
 ```
 
-Expected: PR points at the pushed head SHA, merge state is no longer conflict-blocked, and check status is recorded for Drew.
+预期：PR 指向已推送的 head SHA，合并状态不再被冲突阻塞，检查状态已为 Drew 记录。
 
-## Self-Review Checklist
+## 自审清单
 
-- [ ] Every requirement in `docs/superpowers/specs/2026-06-11-visual-companion-final-hardening-fixup-design.md` maps to one of the tasks above.
-- [ ] The plan contains no vague or incomplete steps.
-- [ ] Tests are added before production fixes in Tasks 1, 2, and 3.
-- [ ] The docs task does not add deferred features.
-- [ ] The verification task includes macOS, Windows, PR diff, PR metadata, external eval evidence, and final manual/browser smoke.
+- [ ] `docs/superpowers/specs/2026-06-11-visual-companion-final-hardening-fixup-design.md` 中的每一条要求都映射到上述任务之一。
+- [ ] 本计划不包含含糊或不完整的步骤。
+- [ ] Task 1、2、3 中测试先于生产修复添加。
+- [ ] 文档任务不添加延期功能。
+- [ ] 验证任务包含 macOS、Windows、PR diff、PR 元数据、外部 eval 证据和最终手动/浏览器冒烟。

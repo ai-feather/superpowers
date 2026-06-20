@@ -1,826 +1,376 @@
-# Porting Superpowers to a New Harness
+# 将 Superpowers 移植到新的宿主
 
-This guide explains how to add support for a new harness — an IDE, CLI, or
-agent runner that isn't Claude Code — so that Superpowers skills auto-trigger
-there the same way they do natively.
+本指南讲解如何为新宿主——也就是那些不是 Claude Code 的 IDE、CLI 或代理运行器——添加支持，使 Superpowers 技能在其上能够像原生环境一样自动触发。
 
-It is written in two layers. **Part 1–3** explain how the system works and how
-to tell whether a harness can be supported at all; read these before you touch
-anything. **Part 4–8** are a prescriptive procedure for an agent (supervised by
-a human partner) to execute the port end to end, through distribution. An
-appendix indexes the current reference integrations so you can copy the closest
-one.
+本指南分为两层。**第 1–3 部分**讲解系统的工作原理，以及如何判断一个宿主到底能不能被支持；在动手之前请先读完这些内容。**第 4–8 部分**是为代理（由你的搭档监督执行）准备的一份可执行流程，用于端到端完成移植直至发布。附录索引了当前的参考实现，方便你直接复制最接近的那一个。
 
-The integration mechanism differs across harnesses, and it will keep changing.
-This guide deliberately teaches the **invariants** — the things that must be
-true no matter the mechanism — and points you at a live reference implementation
-to copy. When this guide and the code disagree, the code wins; fix the guide.
+不同宿主的集成机制各不相同，而且还会持续变化。本指南刻意只讲那些**不变量**——即无论机制如何都必须成立的条件——并指引你去看一个活跃的参考实现去复制。当本指南与代码不一致时，以代码为准；同时请修正本指南。
 
-## Before you start
+## 开始之前
 
-Adding a harness is the highest-stakes contribution type in this repo. Before
-writing anything:
+添加新宿主是本仓库中风险最高的贡献类型。在写任何东西之前：
 
-- Read `CLAUDE.md` and `.github/PULL_REQUEST_TEMPLATE.md` in full — the
-  contributor rules and the new-harness PR requirements are not optional.
-- Search open **and closed** PRs for a prior attempt at this harness. If one
-  exists, understand why it stalled before starting your own.
+- 完整阅读 `CLAUDE.md` 和 `.github/PULL_REQUEST_TEMPLATE.md`——贡献者规则和新宿主 PR 的要求都不是可选项。
+- 在 open **和 closed** 的 PR 中搜索是否有人曾为这个宿主做过尝试。如果有，先搞清楚它为何停滞，再开始你自己的工作。
 
 ---
 
-## Part 1 — How Superpowers works across harnesses
+## 第 1 部分 —— Superpowers 如何跨宿主工作
 
-Superpowers is the same content everywhere. What changes per harness is the thin
-layer that delivers that content to the model and translates its instructions
-into the harness's native tools. Three components:
+Superpowers 在任何地方都是同一份内容。不同宿主之间变化的，只是那层把内容投递给模型、并把指令翻译成宿主原生工具的薄层。组件有三：
 
-1. **Skills (harness-agnostic).** Everything in `skills/` is the source of
-   truth, shared verbatim by every harness. Skills are written to describe
-   *actions* — "invoke a skill", "read a file", "dispatch a subagent", "create a
-   todo" — and never name a specific tool. This is what lets one skill body run
-   on Claude Code, Codex, Gemini, pi, and the rest without edits.
+1. **技能（与宿主无关）。** `skills/` 下的所有内容都是真相来源，由每个宿主原样共享。技能描述的是*动作*——“调用一个技能”、“读一个文件”、“派发一个子代理”、“创建一个 todo”——从不点名某个具体工具。正因如此，同一个技能正文才能在 Claude Code、Codex、Gemini、pi 和其他宿主上不经修改地运行。
 
-2. **Tool mapping (per-harness).** Each harness needs the action vocabulary
-   translated into its real tool names. That translation lives in
-   `skills/using-superpowers/references/<harness>-tools.md` and/or inline in the
-   harness's bootstrap injector (see Part 5). It says, e.g., "*dispatch a
-   subagent* → call `task` with `subagent_type`."
+2. **工具映射（每个宿主各自一份）。** 每个宿主都需要把这套动作词汇表翻译成它真实的工具名。这份翻译放在 `skills/using-superpowers/references/<harness>-tools.md` 里，和/或内联在宿主的引导注入器中（见第 5 部分）。比如它会写：“*派发一个子代理* → 调用 `task` 并传 `subagent_type`。”
 
-3. **Bootstrap (per-harness).** At the start of every session, the full
-   `skills/using-superpowers/SKILL.md` is injected into the model's context,
-   wrapped in `<EXTREMELY_IMPORTANT>` tags, with the tool mapping appended. That
-   injected skill is what teaches the model that skills exist and that it must
-   check for a relevant skill before acting. **The bootstrap is the entire
-   integration.** Without it, the skill files are inert — present on disk, never
-   invoked.
+3. **引导（每个宿主各自一份）。** 在每次会话开始时，完整的 `skills/using-superpowers/SKILL.md` 会被注入到模型上下文中，外面包一层 `<EXTREMELY_IMPORTANT>` 标签，并附上工具映射。正是这个被注入的技能教会模型：技能这种东西存在，并且它在行动前必须检查是否有相关技能可用。**引导就是整个集成。** 没有它，技能文件是死的——躺在磁盘上，永远不会被调用。
 
-### Two rules that make this work
+### 让这一切成立的两条规则
 
-**1. Skills name actions, not tools.** Do **not** edit skill bodies to fit your
-harness. Porting adds a tool-mapping reference and a bootstrap injector; it
-never reaches into `skills/*/SKILL.md` to swap tool names. (The project's
-contributor guidelines treat skill content as carefully-tuned behavior-shaping
-code; rewording it for "compliance" is rejected on sight.)
+**1. 技能描述的是动作，不是工具。** **不要**为了让技能适配你的宿主去修改技能正文。移植只会新增一个工具映射参考文件和一个引导注入器，绝不深入 `skills/*/SKILL.md` 里去替换工具名。（项目贡献者指南把技能内容当作精心调校的行为塑造代码；以“合规”为由重写它会被直接拒掉。）
 
-**2. Everything ships through the harness's own install mechanism. Never edit the
-user's files.** The bootstrap, the skills, and the tool mapping all get delivered
-*as part of what the harness installs* — a plugin, an extension, a marketplace
-entry, an extension-bundled context file. A port **must not** reach into a user's
-global or personal config (`~/.gemini/config/AGENTS.md`, `settings.json`,
-`trustedFolders.json`, a hand-edited `~/.bashrc`, etc.) to inject anything. The
-harness owns what it loads; your install artifact is the only thing you get to
-write. If the install mechanism genuinely can't carry the bootstrap, that is a
-limitation to surface (Part 6) — never a license to hand-edit the user's config.
-(Shape C is *not* an exception: Gemini's context file is fine because it ships
-*inside the installed extension* and is declared by the manifest's
-`contextFileName` — the harness loads the extension's own file, not a file you
-edited in the user's home.)
+**2. 一切都通过宿主自己的安装机制发布。绝不编辑用户的文件。** 引导、技能、工具映射，全都作为*宿主所安装内容的一部分*投递——一个插件、一个扩展、一个市场条目、一个随扩展打包的上下文文件。移植**绝不可以**去碰用户的全局或个人配置（`~/.gemini/config/AGENTS.md`、`settings.json`、`trustedFolders.json`、手改的 `~/.bashrc` 等）来注入任何东西。宿主拥有它所加载的内容；你的安装产物是唯一允许写入的东西。如果安装机制确实无法承载引导，那是一个需要上报的限制（第 6 部分）——绝不意味着可以手改用户的配置。（形态 C *不是*例外：Gemini 的上下文文件之所以可以，是因为它*随已安装的扩展一同发布*，并且由 manifest 的 `contextFileName` 声明——宿主加载的是扩展自己的文件，不是你在用户 home 下编辑的文件。）
 
 ---
 
-## Part 2 — Can this harness be supported?
+## 第 2 部分 —— 这个宿主能不能被支持？
 
-A harness can support Superpowers only if it can do all of the following. Check
-these before writing code — if the first one fails, stop.
+一个宿主只有能满足下面全部条件，才能支持 Superpowers。写代码之前先检查这些——如果第一条不过，就停下。
 
-### Hard requirement: automatic session-start injection
+### 硬性要求：会话开始时自动注入
 
-The harness must let you inject text into the model's context **at the start of
-every session, with no per-session opt-in by your human partner.** This is the
-one non-negotiable capability. It can take any form:
+宿主必须允许你**在每次会话开始时，无需你的搭档逐会话地选择启用**，就把文本注入到模型上下文中。这是唯一一个不可协商的能力。它可以是任何形式：
 
-- a **hook/event system** that runs a shell command at session start and reads
-  its stdout (Claude Code, Codex, Cursor, Copilot CLI), or
-- an **in-process plugin/extension** with a session-start or message lifecycle
-  callback that can mutate the message array (OpenCode, pi), or
-- an **instructions-file** convention where the harness loads a context file that
-  *your installed extension ships and declares* (e.g. Gemini's `contextFileName`
-  pointing at the extension's own `GEMINI.md`) — not a file you edit in the user's
-  home.
+- 一个 **hook/事件系统**，在会话开始时运行 shell 命令并读取其 stdout（Claude Code、Codex、Cursor、Copilot CLI），或
+- 一个 **进程内插件/扩展**，带有会话开始或消息生命周期回调，可以改写消息数组（OpenCode、pi），或
+- 一种 **指令文件**约定，宿主会加载一个*由你已安装的扩展发布并声明*的上下文文件（例如 Gemini 的 `contextFileName` 指向扩展自带的 `GEMINI.md`）——而不是你在用户 home 下编辑的文件。
 
-If the only way to get Superpowers in front of the model is for your human
-partner to opt in each session (paste a prompt, run a command, enable a mode),
-the harness
-**cannot** be properly supported. The acceptance test in Part 3 will fail, and
-the PR will be closed. This is the single most common reason a "port" isn't a
-real port.
+如果让 Superpowers 出现在模型面前的唯一方式，是要求你的搭档每次会话都手动启用一次（粘贴一段 prompt、运行一条命令、打开某个模式），那这个宿主就**无法**被妥善支持。第 3 部分的验收测试会失败，PR 会被关掉。这是“移植”不是真正移植的最常见原因。
 
-### The rest of the capability checklist
+### 其余能力清单
 
-| Capability | Why it's needed | If absent |
+| 能力 | 为什么需要 | 缺失时 |
 |---|---|---|
-| **Skill discovery + invocation** | The model must be able to load a skill's full content on demand | If there's no native skill tool, the sanctioned fallback is to `read` the relevant `SKILL.md` directly — see Part 5. A harness with neither a skill tool nor file-read cannot work. |
-| **File read / write / edit** | Nearly every skill manipulates files | Essential. No workaround. |
-| **Run shell commands** | TDD, verification, git workflows | Essential. |
-| **Subagent / task dispatch** | `dispatching-parallel-agents`, `subagent-driven-development` | Degradable: if unavailable, those specific skills tell the model to do the work inline or report the missing capability — *never* to invent a `Task` call. Some harnesses gate this behind a config flag (e.g. Codex needs multi-agent enabled). |
-| **Todo / task tracking** | Progress tracking in several skills | Degradable: fall back to a plan file or `TODO.md`. |
-| **Web fetch / search** | A few skills | Degradable. |
-| **Shell or polyglot script execution (Windows)** | Only for the shell-hook shape, only if you want Windows support | See Part 7. In-process-plugin harnesses sidestep this entirely. |
+| **技能发现 + 调用** | 模型必须能按需加载某个技能的完整内容 | 如果没有原生技能工具，被认可的后备方案是直接 `read` 对应的 `SKILL.md`——见第 5 部分。一个既没有技能工具也不能读文件的宿主无法工作。 |
+| **文件读 / 写 / 编辑** | 几乎每个技能都会操作文件 | 必需。无可行替代方案。 |
+| **运行 shell 命令** | TDD、验证、git 流程 | 必需。 |
+| **子代理 / 任务派发** | `dispatching-parallel-agents`、`subagent-driven-development` | 可降级：如果不可用，这些具体技能会让模型改成在原地完成工作或报告缺失能力——*绝不*可以臆造一次 `Task` 调用。有些宿主把它藏在某个配置开关后面（例如 Codex 需要启用 multi-agent）。 |
+| **Todo / 任务跟踪** | 多个技能里的进度跟踪 | 可降级：回退到一个 plan 文件或 `TODO.md`。 |
+| **抓取网页 / 搜索** | 少数技能 | 可降级。 |
+| **shell 或 polyglot 脚本执行（Windows）** | 仅 shell-hook 形态需要，仅当你想支持 Windows 时 | 见第 7 部分。进程内插件类宿主完全不受此影响。 |
 
-"Degradable" means: the skill already has fallback wording for the missing
-tool. Your job in the tool mapping is to point at the real tool when it exists
-and reuse that fallback wording when it doesn't.
+“可降级”的意思是：该技能本身就含有针对该工具缺失时的后备措辞。你在工具映射里的工作，是在工具存在时指向真实工具，在工具不存在时复用那段后备措辞。
 
-### You may not need a new directory at all
+### 你可能根本不需要新建目录
 
-Some "new harnesses" are really existing integrations under a different
-installer. Factory's Droid, for example, consumes the Claude Code plugin via its
-own `plugin install` command and needs no new files here. Before building,
-check whether the harness can simply load an existing manifest. A port that adds
-nothing to this repo but a paragraph in the README is a perfectly good outcome.
+有些“新宿主”其实只是换了安装器的现有集成。比如 Factory 的 Droid 通过它自己的 `plugin install` 命令消费 Claude Code 插件，在这里不需要新增任何文件。开始构建之前，先看看这个宿主能不能直接加载某个现有 manifest。一个除了在 README 加一段话之外对本仓库毫无改动的移植，是完全合格的结果。
 
 ---
 
-## Part 3 — Definition of done
+## 第 3 部分 —— 完成的定义
 
-A port is finished when **all** of these are true:
+当一个移植**所有**以下条件都成立时，才算完成：
 
-1. The `using-superpowers` bootstrap loads at session start, every session, with
-   no per-session opt-in.
-2. A tool mapping exists for the harness (in
-   `references/<harness>-tools.md`, inline in the bootstrap, or both — per Part 5).
-3. Skills can actually be invoked — natively, or via the documented
-   read-`SKILL.md` fallback — and the model follows them.
-4. **The acceptance test passes.** In a clean session, the user message:
+1. `using-superpowers` 引导在每次会话开始时都会加载，每次都加载，无需逐会话启用。
+2. 该宿主有一份工具映射（放在 `references/<harness>-tools.md`、内联在引导中，或两者兼有——见第 5 部分）。
+3. 技能确实能被调用——原生调用，或通过文档记载的读 `SKILL.md` 后备方案——并且模型会遵循它们。
+4. **验收测试通过。** 在一次干净会话中，用户消息：
 
    > Let's make a react todo list
 
-   auto-triggers the `brainstorming` skill *before any code is written*. Capture
-   the full transcript — the PR requires it.
-5. Tests cover the integration (Part 5) and pass.
-6. A real user can install it through the harness's own mechanism (not by
-   hand-copying files), and the version is tracked in `.version-bump.json` where
-   applicable (Part 6). Note that some installers rewrite or strip the manifest on
-   install (one drops it to just `{"name": …}`), so "the *installed* files report
-   the repo version" is not always achievable — track the version at the source
-   manifest and don't treat a rewritten installed manifest as a failure.
+   会在*写任何代码之前*自动触发 `brainstorming` 技能。抓取完整 transcript——PR 要求附上它。
+5. 测试覆盖该集成（第 5 部分）并且通过。
+6. 一个真实用户能够通过宿主自己的机制安装它（不是靠手动复制文件），并且在适用时版本号被记录到 `.version-bump.json`（第 6 部分）。注意有些安装器会在安装时改写或剥掉 manifest（有的会把它削成只剩 `{"name": …}`），所以“*已安装的*文件报告仓库版本”并不总能做到——以源 manifest 处的版本跟踪为准，不要把被改写过的已安装 manifest 当作失败。
 
-A quick smoke check before the full acceptance test: start a session and ask the
-model to describe its superpowers. If the bootstrap injected, it knows it has
-them. (OpenCode's install doc uses `opencode run --print-logs "hello" 2>&1 |
-grep -i superpowers` for the same goal via a different mechanism — log-grep
-rather than asking the model; the `2>&1` matters because logs go to stderr. Find
-your harness's equivalent.)
+完整验收测试之前的一个快速烟雾检查：开一个会话，让模型描述它有哪些 superpowers。如果引导注入成功，它会知道它有这些能力。（OpenCode 的安装文档用 `opencode run --print-logs "hello" 2>&1 | grep -i superpowers` 通过另一种机制——日志 grep 而不是问模型——达到同样目的；`2>&1` 很关键，因为日志走 stderr。）找到你宿主的等价做法。
 
 ---
 
-## Part 4 — Choose your integration shape
+## 第 4 部分 —— 选定你的集成形态
 
-There are three structural shapes, distinguished by *how you get the bootstrap
-in front of the model*. Pick the one that matches what your harness exposes,
-then copy that reference implementation. The shape determines almost everything
-in Part 5 — the steps below branch on it.
+共有三种结构形态，区别在于*你如何把引导推到模型面前*。挑出与你宿主暴露能力匹配的那一种，然后复制对应的参考实现。这个形态几乎决定了第 5 部分里的一切——下面的步骤会根据它分叉。
 
-### How to tell which shape you have
+### 怎么判断你属于哪种形态
 
-Before routing, learn the harness's *actual* mechanism — and don't assume it's
-well documented or that it behaves like whatever harness it forked from.
+在选择路由之前，要先弄清宿主的*真实*机制——不要假设它文档完备，也不要假设它和它 fork 自的那个宿主行为一致。
 
-**Find the surface:**
+**找到表面：**
 
-- **Search the web for the harness's docs** (extension / plugin / hook / skill /
-  MCP / "context file" / "rules file"). Vendor tools change fast; search rather
-  than trust training knowledge.
-- **Find and read an existing third-party extension/plugin for the harness.** A
-  real working example beats docs — it shows the manifest shape, the install
-  command, and which components the harness actually loads.
-- Check what the harness loads at startup: a settings file? an extensions
-  directory? a per-project or global instructions file (`AGENTS.md`, `<NAME>.md`)?
+- **在网上搜索该宿主的文档**（extension / plugin / hook / skill / MCP / “context file” / “rules file”）。厂商工具变化很快，搜索胜过依赖训练知识。
+- **找到并阅读一个已有的第三方扩展/插件。** 一个真实可用的例子胜过文档——它展示了 manifest 形态、安装命令，以及宿主到底加载哪些组件。
+- 查看宿主在启动时加载什么：一个 settings 文件？一个扩展目录？一个按项目或全局的指令文件（`AGENTS.md`、`<NAME>.md`）？
 
-**If it's underdocumented, reverse-engineer it empirically** (a real porter has
-had to do every one of these):
+**如果文档不全，就经验性地逆向它**（真正的移植者每一条都做过）：
 
-- `strings` the binary / grep the install tree for hook event names, config
-  paths, and the instructions file it reads.
-- **Ask the running model to enumerate its own tool names** — e.g. "list the
-  exact machine names of every tool you can call." This is the authoritative way
-  to get tool names without inventing them (see Step 4).
-- Prove every assumption with a **unique-marker test**: inject a nonsense token
-  through the mechanism you think works, start a fresh session, and confirm the
-  token actually reached the model.
+- 对二进制跑 `strings` / 在安装目录里 grep hook 事件名、配置路径，以及它读取的指令文件名。
+- **让正在运行的模型枚举它自己的工具名**——例如“列出你能调用的每个工具的精确机器名，每行一个”。这是不靠臆造而获得工具名的权威方式（见第 4 步）。
+- 用**唯一标记测试**验证每一个假设：通过你认为可行的机制注入一段胡言乱语的 token，开一个全新会话，确认这个 token 确实到达了模型。
 
-**A fork does not inherit its parent's behavior.** A harness derived from another
-(e.g. a Gemini-derived CLI) may expose the parent's manifest fields and
-`@`-include syntax and *still not honor them the same way*. Verify with a marker;
-never assume the parent's recipe transfers.
+**一个 fork 不会继承父项目的行为。** 一个派生自其他宿主（例如某个派生自 Gemini 的 CLI）的宿主，可能暴露父项目的 manifest 字段和 `@`-include 语法，却*并不以同样方式兑现它们*。用标记验证；绝不要假设父项目的配方能照搬。
 
-Then route to a shape:
+然后路由到一种形态：
 
-- Shell command at session start whose stdout is read → **Shape A**.
-- Plugin/extension module with lifecycle callbacks you run code in → **Shape B**.
-- Only ever an always-on instructions file, no hook and no code plugin →
-  **Shape C**.
+- 会话开始时运行一条 shell 命令并读取其 stdout → **形态 A**。
+- 一个带生命周期回调、让你在其中跑代码的插件/扩展模块 → **形态 B**。
+- 永远只有一个常开的指令文件，没有 hook 也没有代码插件 → **形态 C**。
 
-**Shapes compose — they are not mutually exclusive.** The *skill-discovery*
-mechanism and the *bootstrap* mechanism need not be the same shape — but **both
-must still ride the install mechanism** (rule 2). Decide the two questions
-separately: *where do skills get discovered?* and *how does the bootstrap reach
-the model every session?* A harness might install skills via a plugin yet need
-the bootstrap delivered another install-shipped way (an extension-declared
-context file, or — see below — by the harness surfacing the installed
-`using-superpowers` skill's own description at session start). If more than one
-install-mechanism surface injects automatically, prefer the most reliable. What
-you may **not** do is bridge a gap by editing the user's global config.
+**各形态可组合——它们并非互斥。** *技能发现*机制和*引导*机制不一定是同一种形态——但**两者都必须仍然依附于安装机制**（规则 2）。分开回答两个问题：*技能在哪里被发现？* 以及 *引导如何每次会话都到达模型？* 一个宿主可能通过插件安装技能，却需要引导以另一种随安装发布的方式投递（一个由扩展声明的上下文文件，或者——见下文——宿主在会话开始时把已安装的 `using-superpowers` 技能自身的 description 呈现出来）。如果有多个安装机制表面都能自动注入，选最可靠的那个。你**不可以**做的，是通过编辑用户全局配置来填补缺口。
 
-### Shape A — Shell-hook
+### 形态 A —— Shell-hook
 
-The harness has a hook system that runs a shell command at session start and
-reads JSON from its stdout. The configured command runs `run-hook.cmd`, a
-polyglot wrapper that just locates bash and dispatches the named script; the
-script (`hooks/session-start`, or a harness-specific variant like
-`hooks/session-start-codex`) is what reads `using-superpowers/SKILL.md` and
-prints a JSON object whose **field name and nesting differ per harness**.
+宿主有一个 hook 系统，在会话开始时运行一条 shell 命令并从其 stdout 读取 JSON。配置好的命令运行 `run-hook.cmd`——一个 polyglot 包装器，它只负责找到 bash 并分发到指定的脚本；脚本（`hooks/session-start`，或某个宿主专属变体如 `hooks/session-start-codex`）读取 `using-superpowers/SKILL.md` 并打印一个 JSON 对象，其**字段名和嵌套结构每个宿主都不同**。
 
-- Reference: `hooks/session-start` (and `hooks/session-start-codex`),
-  `hooks/run-hook.cmd`, and the per-harness hook config `hooks/hooks.json`
-  (Claude Code), `hooks/hooks-codex.json` (Codex), `hooks/hooks-cursor.json`
-  (Cursor).
-- Manifests: `.codex-plugin/plugin.json`, `.cursor-plugin/plugin.json` point the
-  harness at `./skills/` and the right `hooks-*.json`. (Claude Code's
-  `.claude-plugin/plugin.json` sets neither field — it auto-discovers `skills/`
-  and `hooks/hooks.json` by convention.)
+- 参考：`hooks/session-start`（以及 `hooks/session-start-codex`）、`hooks/run-hook.cmd`，以及各宿主的 hook 配置 `hooks/hooks.json`（Claude Code）、`hooks/hooks-codex.json`（Codex）、`hooks/hooks-cursor.json`（Cursor）。
+- Manifest：`.codex-plugin/plugin.json`、`.cursor-plugin/plugin.json` 把宿主指向 `./skills/` 和正确的 `hooks-*.json`。（Claude Code 的 `.claude-plugin/plugin.json` 两个字段都不设——它按约定自动发现 `skills/` 和 `hooks/hooks.json`。）
 
-> **A hook *system* is not a session-start *event*.** A harness can have a
-> `hooks.json` mechanism — and even contain the literal string `SessionStart` in
-> its binary — while having no hook event that fires at session start and can
-> inject context. (One real harness only exposed pre/post-tool and stop events;
-> the `SessionStart` strings were telemetry.) Confirm the *specific event* you
-> need exists and can write to the model's context before committing to Shape A.
-> If it can't, the bootstrap belongs in an instructions file (Shape C) instead.
+> **一个 hook *系统* 不等于一个 session-start *事件*。** 一个宿主可能有 `hooks.json` 机制——甚至其二进制里包含字面字符串 `SessionStart`——却没有一个会在会话开始时触发、并能注入上下文的 hook 事件。（某个真实宿主只暴露 pre/post-tool 和 stop 事件；那些 `SessionStart` 字符串是遥测用的。）在押注形态 A 之前，确认你需要的*具体事件*确实存在并能写入模型上下文。如果做不到，引导就该走指令文件（形态 C）。
 
-### Shape B — In-process plugin / extension
+### 形态 B —— 进程内插件 / 扩展
 
-The harness loads a JS/TS module that exposes lifecycle callbacks. You register
-the skills directory through the harness's API and inject the bootstrap by
-mutating the message array in code.
+宿主加载一个 JS/TS 模块，模块暴露生命周期回调。你通过宿主的 API 注册技能目录，并在代码里改写消息数组来注入引导。
 
-- Reference: `.opencode/plugins/superpowers.js` (JavaScript) and
-  `.pi/extensions/superpowers.ts` (TypeScript). pi is the closest reference for
-  any harness that has **no native skill tool**.
+- 参考：`.opencode/plugins/superpowers.js`（JavaScript）和 `.pi/extensions/superpowers.ts`（TypeScript）。对于任何**没有原生技能工具**的宿主，pi 是最贴近的参考。
 
-### Shape C — Instructions-file
+### 形态 C —— 指令文件
 
-The harness has neither a shell hook nor a code plugin — its session-start
-surface is a context file that *your installed extension ships and the manifest
-declares* (e.g. Gemini's `contextFileName` → the extension's own `GEMINI.md`).
-You can't run code or mutate messages; the extension's context file points at the
-bootstrap. There is no injector to assemble a string or strip frontmatter — the
-harness loads the referenced content as-is. **This works only because the file is
-part of the installed extension** — never substitute "edit the user's global
-`GEMINI.md`/`AGENTS.md`" for shipping your own (rule 2).
+宿主既没有 shell hook 也没有代码插件——它的会话开始入口是一个上下文文件，*由你已安装的扩展发布并由 manifest 声明*（例如 Gemini 的 `contextFileName` → 扩展自带的 `GEMINI.md`）。你跑不了代码，也改不了消息；扩展的上下文文件指向引导。这里没有任何注入器去拼装字符串或剥掉 frontmatter——宿主原样加载被引用的内容。**这之所以可行，仅仅是因为该文件是已安装扩展的一部分**——绝不要用“编辑用户全局 `GEMINI.md`/`AGENTS.md`”来替代发布你自己的文件（规则 2）。
 
-- Reference: `gemini-extension.json` (manifest, with `contextFileName`),
-  `GEMINI.md` (two `@`-includes — the bootstrap skill and the tool-mapping
-  reference), `skills/using-superpowers/references/gemini-tools.md`.
-- Note: `@`-include is a Gemini feature. If your harness loads an instructions
-  file but has no include syntax, you must inline the bootstrap content into the
-  file instead.
-- **Don't trust that an `@`-include is actually expanded — prove it.** A
-  Gemini-*derived* harness can accept `@./path` syntax yet treat it as a *hint
-  the model may choose to read* (it emits a file-read tool call) rather than a
-  guaranteed inline expansion. That's the difference between the bootstrap being
-  reliably present every session and the model maybe-reading it. Run a
-  unique-marker test: if the marker isn't in context *without* a tool call,
-  **inline the content** rather than `@`-include it.
+- 参考：`gemini-extension.json`（manifest，含 `contextFileName`）、`GEMINI.md`（两个 `@`-include——引导技能和工具映射参考）、`skills/using-superpowers/references/gemini-tools.md`。
+- 注意：`@`-include 是 Gemini 的特性。如果你的宿主加载指令文件但没有 include 语法，你必须把引导内容内联到该文件里。
+- **不要相信 `@`-include 一定会被展开——要证明它。** 一个派生自 Gemini 的宿主可能接受 `@./path` 语法，却把它当作*模型可选择去读的提示*（它发出一次文件读工具调用），而不是有保证的内联展开。这正是“引导每次会话都可靠在场”和“模型可能去读它”之间的差别。跑一次唯一标记测试：如果该标记不在上下文里且*没有*伴随工具调用，就**把内容内联**而不是用 `@`-include。
 
-### Routing table
+### 路由表
 
-| If the harness… | Use shape | Copy from |
+| 如果宿主…… | 使用形态 | 复制自 |
 |---|---|---|
-| runs a shell command at session start and reads its stdout | A (shell-hook) | Codex (`hooks/session-start-codex` + `hooks/hooks-codex.json` + `.codex-plugin/`) |
-| is a JS/TS plugin host with session/message lifecycle callbacks | B (in-process) | OpenCode (`.opencode/`) — or pi (`.pi/`) if it has no native skill tool |
-| ships an extension-declared context file it always loads | C (instructions-file) | Gemini (`gemini-extension.json` + `GEMINI.md` + `references/gemini-tools.md`) |
-| has a plugin install command and a manifest `contextFileName` (or equivalent) the installer keeps | C via the plugin installer | Antigravity (`.antigravity-plugin/` — `agy plugin install` ships a generated context file; verify the installer preserves it — Part 6) |
+| 在会话开始时运行 shell 命令并读取其 stdout | A（shell-hook） | Codex（`hooks/session-start-codex` + `hooks/hooks-codex.json` + `.codex-plugin/`） |
+| 是一个带 session/message 生命周期回调的 JS/TS 插件宿主 | B（进程内） | OpenCode（`.opencode/`）——或 pi（`.pi/`），如果它没有原生技能工具 |
+| 发布一个由扩展声明、且总会被加载的上下文文件 | C（指令文件） | Gemini（`gemini-extension.json` + `GEMINI.md` + `references/gemini-tools.md`） |
+| 有 plugin install 命令，且 manifest 有一个会被安装器保留的 `contextFileName`（或等价物） | 通过插件安装器的 C | Antigravity（`.antigravity-plugin/`——`agy plugin install` 会发布一个生成的上下文文件；验证安装器是否保留它——第 6 部分） |
 
-Most real harnesses fit one row cleanly; the last is the hybrid case (rule 2 still
-holds — the bootstrap rides the install mechanism, never a user-config edit).
+大多数真实宿主都能干净地归到某一行；最后一行是混合情形（规则 2 仍然成立——引导依附于安装机制，绝不是用户配置的编辑）。
 
 ---
 
-## Part 5 — The porting procedure
+## 第 5 部分 —— 移植流程
 
-### Step 1 — Study the closest reference implementation
+### 第 1 步 —— 研究最贴近的参考实现
 
-Open the files named in Part 4 for your shape and read them end to end. The
-patterns below are summaries; the code is the spec.
+打开第 4 部分里针对你形态列出的那些文件，从头到尾读一遍。下面的要点只是摘要；代码才是规格。
 
-### Step 2 — Create the manifest / entry point
+### 第 2 步 —— 创建 manifest / 入口点
 
-Create whatever the harness uses to recognize the plugin. Match the existing
-ones in spirit:
+创建宿主用来识别插件的那些文件。在精神上与现有保持一致：
 
-- **Shape A:** a `*-plugin/plugin.json` (see `.codex-plugin/plugin.json`) with
-  `name`, `version`, `description`, author/license/keywords, `"skills":
-  "./skills/"`, and `"hooks": "./hooks/hooks-<harness>.json"`. Plus the
-  `hooks-<harness>.json` itself, registering a session-start hook whose command
-  invokes `run-hook.cmd`.
-- **Shape B:** the module the harness loads (e.g. `.<harness>/plugins/*.js`) plus
-  whatever package metadata it needs to be discovered. The committed package
-  metadata is the **repo-root `package.json`**: `main` points at the OpenCode
-  plugin, the `pi` field (`pi.extensions`, `pi.skills`) plus the `pi-package`
-  keyword declare the pi extension. Per-harness local manifests and lockfiles are
-  kept out of git — `.opencode/.gitignore` excludes `node_modules`,
-  `package.json`, and lockfiles. Do the same for your harness's *local* install
-  artifacts so they don't pollute the repo — but never gitignore the repo-root
-  `package.json`, which is the tracked source of truth.
-  - **Build/dependency check.** Decide how the harness loads your module:
-    does it run the source directly (pi's `.ts` is referenced as-is from
-    `package.json`; OpenCode ships plain `.js`), or does it need a transpile/build
-    step? Superpowers is zero-runtime-dependency. pi's `import type
-    { ExtensionAPI }` works specifically because the harness runs the `.ts`
-    directly, supplies that type at load, and the repo never type-checks the file
-    in CI — the import isn't even declared as a dependency. If *your* harness
-    actually type-checks or bundles the plugin, that breaks: an undeclared type
-    import fails, and the PR rules only carve out *runtime* deps for new
-    harnesses, not dev/type packages. If you hit this, confirm the approach with
-    the maintainer rather than quietly adding a dependency. Keep any build output
-    out of git and document the command.
-- **Shape C (instructions-file):** a small manifest (see `gemini-extension.json`:
-  `name`, `description`, `version`, `contextFileName`) plus the context file
-  itself (`GEMINI.md` is just two `@`-includes: the bootstrap skill and the
-  tool-mapping reference). The Gemini manifest has no `skills` field — Gemini
-  auto-discovers the `skills/` directory bundled in the installed extension. If
-  your harness has a native skill tool but no manifest field to register the
-  directory, you must find its discovery convention (read its extension docs),
-  then verify empirically: after wiring, ask the model to list its available
-  skills — if the bundled skills don't appear, discovery isn't working yet.
+- **形态 A：** 一个 `*-plugin/plugin.json`（见 `.codex-plugin/plugin.json`），含 `name`、`version`、`description`、author/license/keywords、`"skills": "./skills/"`、`"hooks": "./hooks/hooks-<harness>.json"`。再加 `hooks-<harness>.json` 本身，注册一个 session-start hook，其命令调用 `run-hook.cmd`。
+- **形态 B：** 宿主加载的模块（例如 `.<harness>/plugins/*.js`）以及让它能被发现所需的任何 package 元数据。提交进 git 的 package 元数据是**仓库根目录的 `package.json`**：`main` 指向 OpenCode 插件，`pi` 字段（`pi.extensions`、`pi.skills`）加上 `pi-package` keyword 声明了 pi 扩展。各宿主的本地 manifest 和 lockfile 都不进 git——`.opencode/.gitignore` 排除了 `node_modules`、`package.json` 和 lockfile。对你的宿主*本地*安装产物也照此办理，免得污染仓库——但绝不要 gitignore 仓库根目录的 `package.json`，那是被跟踪的真相来源。
+  - **构建/依赖检查。** 弄清宿主如何加载你的模块：它是直接跑源码（pi 的 `.ts` 被 `package.json` 原样引用；OpenCode 发布纯 `.js`），还是需要一个转译/构建步骤？Superpowers 是零运行时依赖的。pi 的 `import type { ExtensionAPI }` 之所以能用，恰恰是因为宿主直接跑 `.ts`、在加载时提供该类型，而仓库从不在 CI 里对它做类型检查——这个 import 甚至没有被声明为依赖。如果*你的*宿主真的会对插件做类型检查或打包，那就会出问题：未声明的类型 import 会失败，而 PR 规则为新宿主开脱的仅限于*运行时*依赖，不包括 dev/类型包。遇到这种情况，与维护者确认方案，而不是悄悄加一个依赖。把任何构建产物排除在 git 之外，并文档化构建命令。
+- **形态 C（指令文件）：** 一个小 manifest（见 `gemini-extension.json`：`name`、`description`、`version`、`contextFileName`）加上上下文文件本身（`GEMINI.md` 只是两个 `@`-include：引导技能和工具映射参考）。Gemini manifest 没有 `skills` 字段——Gemini 会自动发现已安装扩展中打包的 `skills/` 目录。如果你的宿主有原生技能工具却没有 manifest 字段来注册该目录，你必须找到它的发现约定（读它的扩展文档），然后经验性地验证：接好线之后，让模型列出它可用的技能——如果打包进去的技能不出现，就说明发现机制还没起作用。
 
-### Step 3 — Wire the bootstrap injection
+### 第 3 步 —— 接好引导注入
 
-This is the heart of the port. The shared goal: at session start, get the
-`using-superpowers` skill content (wrapped in `<EXTREMELY_IMPORTANT>` tags) plus
-the harness's tool mapping in front of the model, with a note that the skill is
-already active so the model doesn't try to load it again. *How* you do that —
-and what you assemble vs. what the harness loads raw — depends entirely on your
-shape. Do **not** apply one shape's recipe to another.
+这是移植的核心。共同目标：在会话开始时，把 `using-superpowers` 技能内容（外面包一层 `<EXTREMELY_IMPORTANT>` 标签）加上宿主的工具映射推到模型面前，并附注该技能已经处于激活状态，这样模型就不会试图再次加载它。*怎么做*——以及你拼装什么 vs. 宿主原样加载什么——完全取决于你的形态。**不要**把一种形态的配方套到另一种上。
 
-**Shape A — a script reads `SKILL.md` and prints the harness's JSON.** The
-dispatched script (`hooks/session-start`) `cat`s the whole `SKILL.md` (frontmatter
-included — that's fine; it's emitted verbatim), wraps it with the "You have
-superpowers… for all other skills use the Skill tool" preamble, escapes it, and
-prints the harness's JSON shape. The tool mapping for Shape A does **not** go
-inline here — it lives in `references/<harness>-tools.md` (Step 4). Get the JSON
-output shape exactly right. `hooks/session-start`
-detects the harness from environment variables and prints *one of three* shapes:
+**形态 A —— 一个脚本读 `SKILL.md` 并打印该宿主的 JSON。** 被分发的脚本（`hooks/session-start`）`cat` 整份 `SKILL.md`（包含 frontmatter——没问题；它是原样输出的），在外面套上“You have superpowers… for all other skills use the Skill tool”这一前导，转义它，再打印该宿主的 JSON 形态。形态 A 的工具映射**不**内联在这里——它放在 `references/<harness>-tools.md`（第 4 步）。把 JSON 输出形态弄对。`hooks/session-start` 通过环境变量探测宿主，并打印*三种形态之一*：
 
-- Cursor (`CURSOR_PLUGIN_ROOT` set): `{ "additional_context": "…" }`
-- Claude Code (`CLAUDE_PLUGIN_ROOT` set, `COPILOT_CLI` unset):
-  `{ "hookSpecificOutput": { "hookEventName": "SessionStart", "additionalContext": "…" } }`
-- Copilot CLI / SDK standard (else): `{ "additionalContext": "…" }`
+- Cursor（设置了 `CURSOR_PLUGIN_ROOT`）：`{ "additional_context": "…" }`
+- Claude Code（设置了 `CLAUDE_PLUGIN_ROOT`，未设置 `COPILOT_CLI`）：`{ "hookSpecificOutput": { "hookEventName": "SessionStart", "additionalContext": "…" } }`
+- Copilot CLI / SDK 标准（其他情况）：`{ "additionalContext": "…" }`
 
-This is a trap. Emitting the wrong field, or an extra one, means the bootstrap
-either never injects or injects twice (Claude Code reads both
-`additional_context` and `hookSpecificOutput` without de-duplicating, so emitting
-both double-injects). Find the
-exact field, nesting, and event-matcher values your harness expects. Then
-decide: add a fourth branch to `hooks/session-start`, or — if the harness needs
-a different bootstrap message or env contract — add a dedicated
-`hooks/session-start-<harness>` script, the way Codex did. If you add a branch
-and your harness *also* sets an env var an earlier branch keys on (some harnesses
-set `CLAUDE_PLUGIN_ROOT` too), order your branch before the one that would
-otherwise shadow it. Match the harness's
-own event-matcher strings (Claude Code uses `startup|clear|compact`, Codex
-`startup|resume|clear`, Cursor `sessionStart`); wrong matchers mean the hook
-silently never fires.
+这是一个坑。发错字段，或多发一个字段，意味着引导要么根本不注入，要么注入两次（Claude Code 同时读取 `additional_context` 和 `hookSpecificOutput` 且不去重，所以两个都发会双重注入）。找到你的宿主期望的精确字段、嵌套和 event-matcher 值。然后决定：给 `hooks/session-start` 加第四个分支，或者——如果该宿主需要不同的引导消息或环境契约——像 Codex 那样加一个专门的 `hooks/session-start-<harness>` 脚本。如果你加分支而你的宿主*也*设置了某个更早分支所 key-on 的环境变量（有些宿主也会设 `CLAUDE_PLUGIN_ROOT`），把你的分支排到那个原本会遮蔽它的分支之前。匹配宿主自己的 event-matcher 字符串（Claude Code 用 `startup|clear|compact`，Codex 用 `startup|resume|clear`，Cursor 用 `sessionStart`）；matcher 错了，hook 会静默不触发。
 
-The **hook-config schema itself varies per harness** — don't assume the
-Claude/Codex shape is universal. Compare `hooks/hooks.json`,
-`hooks/hooks-codex.json`, and `hooks/hooks-cursor.json`: Cursor's uses
-`"version": 1`, a lowercase `sessionStart` key, a relative
-`./hooks/run-hook.cmd` command, and omits the `matcher`/`type`/`async` fields the
-others use. Match your `hooks-<harness>.json` to whichever existing file is
-closest, not to a single canonical template.
+**hook 配置的 schema 本身也随宿主而异**——不要假设 Claude/Codex 的形态是通用模板。对比 `hooks/hooks.json`、`hooks/hooks-codex.json` 和 `hooks/hooks-cursor.json`：Cursor 的用 `"version": 1`、小写的 `sessionStart` 键、相对路径 `./hooks/run-hook.cmd` 命令，并省略了其他两者使用的 `matcher`/`type`/`async` 字段。让你的 `hooks-<harness>.json` 去匹配最接近的现有文件，而不是某个唯一的规范模板。
 
-The hook **command string references a harness-provided plugin-root variable**,
-and its name differs per harness: `hooks.json` uses `${CLAUDE_PLUGIN_ROOT}`,
-`hooks-codex.json` uses `${PLUGIN_ROOT}`, Cursor uses a relative path. Use
-whatever your harness exports. (The `session-start` script re-derives the root
-itself via `dirname`, so the script body doesn't depend on this — but the
-command in the manifest does.)
+hook **命令字符串引用一个由宿主提供的 plugin-root 变量**，它的名字每个宿主都不同：`hooks.json` 用 `${CLAUDE_PLUGIN_ROOT}`，`hooks-codex.json` 用 `${PLUGIN_ROOT}`，Cursor 用相对路径。用你的宿主导出的那个。（`session-start` 脚本自己通过 `dirname` 重新推导出根路径，所以脚本正文不依赖它——但 manifest 里的命令依赖。）
 
-**Discovering the harness's contract.** The three facts above — env var, JSON
-field/nesting, matcher strings — are the harness's contract, not Superpowers',
-so you have to source them. Read the harness's hook docs, or find out
-empirically: register a throwaway session-start hook that dumps its environment
-and emits a marker, then observe which env var identifies the harness and
-whether/how the harness ingests your stdout. Pin these down before writing the
-real branch.
+**发现宿主的契约。** 上述三件事——环境变量、JSON 字段/嵌套、matcher 字符串——是宿主的契约，不是 Superpowers 的，所以你必须自己去找来源。读宿主的 hook 文档，或经验性地找：注册一个一次性的 session-start hook，dump 它的环境并输出一个标记，然后观察哪个环境变量能识别该宿主，以及该宿主如何/是否消费你的 stdout。在写真正的分支之前，先把这些钉死。
 
-**Shape B — assemble the string in code, then inject as a user message.** Here
-you build the bootstrap yourself: read `SKILL.md`, strip its YAML frontmatter,
-and assemble `<EXTREMELY_IMPORTANT>` + a short preamble that the skill is already
-loaded and must not be re-invoked + the stripped body + the inline tool mapping +
-`</EXTREMELY_IMPORTANT>`. One subtlety the references disagree on: OpenCode's
-preamble says "do NOT use the skill tool…" (assumes a `skill` tool exists), while
-pi's just says "do not try to load using-superpowers again." If your harness has
-no skill tool, use pi's wording, not OpenCode's.
+**形态 B —— 在代码里拼装字符串，然后作为 user 消息注入。** 这里你自己构建引导：读 `SKILL.md`，剥掉它的 YAML frontmatter，拼装 `<EXTREMELY_IMPORTANT>` + 一段简短前导（说明该技能已加载、不可再被调用）+ 剥好的正文 + 内联工具映射 + `</EXTREMELY_IMPORTANT>`。参考实现之间有一个分歧点：OpenCode 的前导写“do NOT use the skill tool…”（假设存在 `skill` 工具），而 pi 的只是写“do not try to load using-superpowers again.”。如果你的宿主没有技能工具，用 pi 的措辞，而不是 OpenCode 的。
 
-Inject the result as a **user-role message, not a system message** — system
-messages bloat tokens when repeated every turn (#750) and multiple system
-messages break some models (#894). Three things you must replicate:
+把结果作为 **user-role 消息注入，不是 system 消息**——system 消息在每轮重复时会膨胀 token（#750），而且多个 system 消息会破坏某些模型（#894）。有三件事你必须照做：
 
-- **Dedup guard.** The lifecycle callback can fire repeatedly (OpenCode's
-  transform runs on *every* agent step; pi's `context` fires per turn). Before
-  injecting, check whether a bootstrap marker is already present and skip if so.
-  (The references pick different markers — pi a custom string, OpenCode the
-  `EXTREMELY_IMPORTANT` tag; matching the tag is more robust since it needs no
-  harness-specific constant.) Cache the bootstrap content at module level so
-  you're not re-reading and re-parsing `SKILL.md` on every call (#1202).
-- **Compaction.** If the harness compacts/summarizes history, re-inject
-  afterward. pi sets an `injectBootstrap` flag on `session_start` and
-  `session_compact`, clears it on `agent_end`, and inserts the message *after*
-  any leading compaction-summary messages. OpenCode relies on its per-step
-  re-injection plus the dedup guard.
-- **Message-object shape is per-harness — discover yours, don't copy a literal.**
-  The two references use *incompatible* shapes: pi builds
-  `{ role, content: [{ type, text }], timestamp }`; OpenCode manipulates
-  `message.info.role` and `message.parts[]`. Find your harness's message shape
-  from its API; copying a reference's object literal verbatim will fail silently.
+- **去重守卫。** 生命周期回调可能反复触发（OpenCode 的 transform 在*每个* agent step 上运行；pi 的 `context` 每轮触发）。注入之前，检查是否已存在引导标记，是则跳过。（参考实现选了不同的标记——pi 用一个自定义字符串，OpenCode 用 `EXTREMELY_IMPORTANT` 标签；匹配标签更稳健，因为它不依赖宿主特定的常量。）在模块级别缓存引导内容，免得每次调用都重读、重解析 `SKILL.md`（#1202）。
+- **压缩。** 如果宿主会压缩/摘要历史，要在压缩之后重新注入。pi 在 `session_start` 和 `session_compact` 上设一个 `injectBootstrap` 标志，在 `agent_end` 上清掉它，并把消息插在任何开头的压缩摘要消息*之后*。OpenCode 依赖它的逐步重新注入加上去重守卫。
+- **message-object 形态是每个宿主都不同的——去发现你自己的，别照抄字面值。** 两个参考用了*互不兼容*的形态：pi 构造 `{ role, content: [{ type, text }], timestamp }`；OpenCode 改写 `message.info.role` 和 `message.parts[]`。从宿主的 API 找出你的消息形态；逐字复制参考的对象字面值会静默失败。
 
-**Shape C — point your extension's context file at the bootstrap; assemble
-nothing.** There is no injector, so you do *not* strip frontmatter or build a
-wrapped string. The context file your extension ships (declared by the manifest —
-*not* the user's own global file) pulls in two things: the `using-superpowers`
-skill and the harness's tool-mapping reference. `GEMINI.md`
-does this with two `@`-includes (`@./skills/using-superpowers/SKILL.md` and
-`@./skills/using-superpowers/references/<harness>-tools.md`); the harness loads
-them raw, frontmatter and all, and `SKILL.md` already carries its own
-`<EXTREMELY-IMPORTANT>` block internally. If your harness has no include syntax,
-inline the content into the instructions file instead. Gemini ships **no**
-"already loaded, don't re-invoke" preamble — for an `@`-include harness the
-content is the active instruction set, not a skill the model would re-load. If
-you find your harness does try to re-invoke, add that note as a literal line in
-the instructions file (you have no code to add it any other way).
+**形态 C —— 把扩展的上下文文件指向引导；什么都不用拼装。** 这里没有注入器，所以你*不*剥 frontmatter，也不构造包好包装的字符串。你的扩展发布的上下文文件（由 manifest 声明——*不是*用户自己的全局文件）拉进两样东西：`using-superpowers` 技能和宿主的工具映射参考。`GEMINI.md` 用两个 `@`-include 做这件事（`@./skills/using-superpowers/SKILL.md` 和 `@./skills/using-superpowers/references/<harness>-tools.md`）；宿主原样加载它们，frontmatter 也照样保留，而 `SKILL.md` 内部本来就带自己的 `<EXTREMELY-IMPORTANT>` 块。如果你的宿主没有 include 语法，就把内容内联到指令文件里。Gemini **不**发布任何“已加载、不要再调用”的前导——对于一个 `@`-include 宿主，内容就是活动的指令集，不是模型会再去加载的技能。如果你发现你的宿主确实会试图再次调用，就在指令文件里加一行字面说明（你没有别的代码途径去加它）。
 
-### Step 4 — Write the tool mapping
+### 第 4 步 —— 写工具映射
 
-Translate the action vocabulary into the harness's real tools. Cover every one
-of these actions (omit only what genuinely doesn't apply):
+把动作词汇表翻译成宿主的真实工具。覆盖以下每一项动作（只省略那些确实不适用的）：
 
-- read a file
-- create / edit / delete a file (one `apply_patch`-style tool, or separate
-  write/edit?)
-- run a shell command
-- search file contents / find files by name (grep, glob)
-- fetch a URL / web search
-- **dispatch a subagent**, including how to pass the agent type — and any config
-  flag needed to enable it
-- **create / update todos** (treat older `TodoWrite` references as this action)
-- **invoke a skill** — see Step 5
+- 读一个文件
+- 创建 / 编辑 / 删除一个文件（一个 `apply_patch` 风格的工具，还是分开的 write/edit？）
+- 运行一条 shell 命令
+- 搜索文件内容 / 按名字找文件（grep、glob）
+- 抓取一个 URL / 网页搜索
+- **派发一个子代理**，包括如何传递 agent 类型——以及启用它所需的任何配置开关
+- **创建 / 更新 todos**（把较早的 `TodoWrite` 引用当作这个动作处理）
+- **调用一个技能** —— 见第 5 步
 
-**Get the real tool names from the harness; never invent them.** If the docs
-don't list them, the authoritative source is the harness itself: in a live
-session, ask the model to "list the exact machine names of every tool you can
-call, one per line" and use what it reports.
+**从宿主获取真实工具名；绝不臆造。** 如果文档没有列出，权威来源是宿主本身：在活会话里，让模型“列出你能调用的每个工具的精确机器名，每行一个”，用它报告的为准。
 
-**How the harness finds the `skills/` directory is itself per-harness** — confirm
-it, don't assume. Possibilities: a manifest `skills` path field (Codex's
-`"skills": "./skills/"`); a *co-located* `skills/` the harness auto-scans (where a
-path field is **ignored** — one real harness only scanned a `skills/` sitting next
-to `plugin.json`); an API/registration call (OpenCode, pi); or you stage an
-install dir that pairs the manifest with a **symlink to the repo's `skills/`** and
-point the installer at the staging dir (verify the installer *dereferences* the
-symlink and copies the real files — confirm with `agy plugin validate`/`install`
-or the equivalent before relying on it). A `skills` path field is *not* portable.
+**宿主如何找到 `skills/` 目录，本身也是每个宿主都不同**——要确认，不要假设。可能性：一个 manifest 的 `skills` 路径字段（Codex 的 `"skills": "./skills/"`）；一个宿主自动扫描的*同位* `skills/`（在这种情况下路径字段被**忽略**——某个真实宿主只扫描紧挨着 `plugin.json` 的那个 `skills/`）；一次 API/注册调用（OpenCode、pi）；或者你准备一个安装目录，把 manifest 与一个**指向仓库 `skills/` 的符号链接**配对放好，再让安装器指向这个暂存目录（验证安装器会*解引用*符号链接并拷贝真实文件——在依赖它之前用 `agy plugin validate`/`install` 或等价命令确认）。`skills` 路径字段*不*是可移植的。
 
-Where the mapping lives depends on shape:
+映射放哪里取决于形态：
 
-- **Shape A:** put it in `skills/using-superpowers/references/<harness>-tools.md`.
-  The agent reaches it from the bootstrap — `SKILL.md`'s "Platform Adaptation"
-  section links the per-harness references files. (Shape A harnesses have no
-  instructions file; the mapping is *not* inlined into the hook output.)
-- **Shape B:** the mapping is typically inlined into the bootstrap string you
-  inject (see the `toolMapping` constant in `superpowers.js`). pi keeps it in
-  *both* places — `piToolMapping()` inline **and** `references/pi-tools.md`. If
-  you maintain it in two places, update both, or the port is half-done.
-- **Shape C:** put it in `references/<harness>-tools.md` and pull it into the
-  always-loaded instructions file (e.g. `GEMINI.md` `@`-includes
-  `gemini-tools.md`).
+- **形态 A：** 放在 `skills/using-superpowers/references/<harness>-tools.md`。代理通过引导触达它——`SKILL.md` 的“Platform Adaptation”一节链接到各宿主的参考文件。（形态 A 宿主没有指令文件；映射*不*内联进 hook 输出。）
+- **形态 B：** 映射通常内联进你注入的引导字符串（见 `superpowers.js` 里的 `toolMapping` 常量）。pi 把它放在*两个*地方——内联的 `piToolMapping()` **以及** `references/pi-tools.md`。如果你在两处都维护，两处都要更新，否则移植只完成一半。
+- **形态 C：** 放在 `references/<harness>-tools.md`，并把它拉进总是加载的指令文件（例如 `GEMINI.md` `@`-include 了 `gemini-tools.md`）。
 
-You may also add a one-line pointer to your harness in `SKILL.md`'s "Platform
-Adaptation" section so an agent reading the bootstrap knows where its mapping
-lives. This is the one edit to a `SKILL.md` a port may make — and only because
-that section is a pointer list, not behavior-shaping content. It does not violate
-the "don't edit skill bodies" rule (Part 1); do not touch anything else in any
-skill. (The list is a convenience pointer, not an exhaustive registry — not every
-harness is listed.)
+你还可以在 `SKILL.md` 的“Platform Adaptation”一节里加一行指向你宿主的指针，让读到引导的代理知道它的映射在哪里。这是一个移植可以对 `SKILL.md` 做的唯一一处编辑——也仅仅因为那一节是指针列表，不是行为塑造内容。它不违反“不要改技能正文”这条规则（第 1 部分）；不要碰任何技能里的其他东西。（这个列表是便利指针，不是穷尽注册表——并不是每个宿主都列出来。）
 
-### Step 5 — Handle a harness with no native skill tool
+### 第 5 步 —— 处理没有原生技能工具的宿主
 
-`using-superpowers/SKILL.md` tells the model to *never read skill files manually
-with file tools — always use your platform's skill-loading mechanism.* The point
-is "don't bypass the mechanism," not "never use file-read." What counts as "your
-platform's mechanism" depends on the harness — and for a harness with no skill
-tool, the documented mechanism *is* reading `SKILL.md`. So reading it there
-honors the rule rather than breaking it. Distinguish three cases:
+`using-superpowers/SKILL.md` 告诉模型：*绝不手动用文件工具读技能文件——永远使用你平台的技能加载机制。* 这里的重点是“不要绕过机制”，不是“永远不要用文件读”。什么叫“你平台的机制”，取决于宿主——而对于一个没有技能工具的宿主，文档记载的机制*就是*读 `SKILL.md`。所以在那里读它正是遵守规则而不是破坏它。区分三种情况：
 
-1. **Native `Skill`-style tool** (Claude Code, Copilot CLI, Gemini's
-   `activate_skill`): point the mapping at that tool.
-2. **Native skill *discovery* but no `Skill` tool** (pi, Antigravity): the harness
-   can find and list skills, but the model can't call a tool to load one. Get the
-   skills installed where the harness scans (pi registers via `resources_discover`
-   → `skillPaths`; OpenCode via its `config` hook; `agy plugin install` copies
-   them in), and tell the model to load a skill by **reading its `SKILL.md` with
-   the file-read tool when the skill applies** — the sanctioned mechanism here,
-   the way `references/pi-tools.md` states it.
+1. **原生 `Skill` 风格工具**（Claude Code、Copilot CLI、Gemini 的 `activate_skill`）：把映射指向那个工具。
+2. **原生技能*发现*但没有 `Skill` 工具**（pi、Antigravity）：宿主能找到并列出技能，但模型没法调用一个工具去加载某个技能。把技能装到宿主扫描的地方（pi 通过 `resources_discover` → `skillPaths` 注册；OpenCode 通过它的 `config` hook；`agy plugin install` 把它们拷贝进去），并告诉模型：当某技能适用时，**用文件读工具读它的 `SKILL.md`** 来加载——这是这里被认可的方式，正如 `references/pi-tools.md` 所述。
 
-   **For the bootstrap itself, prefer a declared context file (Part 6).** If the
-   harness has a `contextFileName`-style manifest field — as Antigravity does —
-   ship a generated context file through the installer: it's guaranteed-loaded and
-   carries both the `using-superpowers` content and the tool mapping. That is the
-   strong, preferred path.
+   **对于引导本身，优先用声明的上下文文件（第 6 部分）。** 如果宿主有 `contextFileName` 风格的 manifest 字段——Antigravity 就有——就通过安装器发布一个生成的上下文文件：它一定会被加载，并且同时承载 `using-superpowers` 内容和工具映射。这是强、优先的路径。
 
-   **Fallback — the surfaced skill index.** If there's no context-file field but
-   the harness surfaces each installed skill's name + description at session start,
-   you need *neither* a built index nor a runtime-list instruction — the harness
-   is the index, and `using-superpowers`'s own surfaced description can be what
-   triggers the model to load it. This is softer than a declared context file;
-   two things it does **not** give you, versus a context file / hook / in-process
-   injector — account for both:
-   - **It bootstraps *triggering*, not the *tool mapping*.** An injector prepends
-     `<harness>-tools.md` alongside `using-superpowers` every session. Here nothing
-     injects the mapping — the model only sees skill *descriptions* and must *read*
-     your `references/<harness>-tools.md` when it needs tool names. It works
-     because skills name actions (the model reads the mapping when it acts), but
-     it's softer than injection. Make sure the mapping is reachable from what the
-     model loads — e.g. linked from `SKILL.md`'s Platform Adaptation section and
-     installed alongside the skills — not just sitting in the repo.
-   - **There's no structural guarantee the trigger fires.** No `<EXTREMELY_IMPORTANT>`
-     wrapper, no dedup, no re-injection after compaction — firing depends on the
-     model choosing to act on a description it sees in the index. This is exactly
-     why the acceptance test is mandatory here: it is the *only* guarantee, so run
-     it on the model(s) your users will actually use, not just the strongest one.
-3. **No skill system at all:** there is nothing to register, and the *only*
-   mechanism is the model reading `SKILL.md` on demand. But the model can't read
-   what it can't find: `using-superpowers/SKILL.md` does **not** enumerate the
-   available skills, so on its own the model won't know which skills exist or
-   their triggers. You must supply a discovery path. Two options, and they differ
-   in durability: (a) generate a skill index (each `skills/*/SKILL.md`'s `name` +
-   `description` frontmatter) and place it *inside* the `<EXTREMELY_IMPORTANT>`
-   wrapper alongside the tool mapping (Shape B recipe above) so it's covered by
-   the dedup guard — but a build-time index goes stale as skills are added; or
-   (b) instruct the model to list `skills/*/SKILL.md` at runtime and read their
-   frontmatter to find a match — slower but never stale. Prefer (b) unless you
-   have a reason not to. Without either, a no-skill-system port loads the
-   bootstrap but silently never triggers any other skill.
+   **后备 —— 被呈现出来的技能索引。** 如果没有上下文文件字段，但宿主在每次会话开始时把每个已安装技能的 name + description 呈现出来，你就*既不需要*构建索引*也不需要*运行时列表指令——宿主本身就是索引，而 `using-superpowers` 自身被呈现出来的 description 就可以成为触发模型去加载它的因素。这比声明的上下文文件要弱；相较于上下文文件 / hook / 进程内注入器，它有两件事**给不了**你——要把两件都考虑进去：
+   - **它引导的是*触发*，不是*工具映射*。** 一个注入器会在每次会话时把 `<harness>-tools.md` 和 `using-superpowers` 一起前置。这里没有任何东西注入映射——模型只看到技能 *description*，并且必须*读*你的 `references/<harness>-tools.md` 来获取工具名。这之所以能工作，是因为技能描述的是动作（模型在行动时就会去读映射），但它比注入要弱。要确保映射从模型加载的内容里可达——比如从 `SKILL.md` 的 Platform Adaptation 一节链接过去，并与技能一起安装——而不只是躺在仓库里。
+   - **没有结构性保证触发一定发生。** 没有 `<EXTREMELY_IMPORTANT>` 包装，没有去重，没有压缩后重新注入——是否触发取决于模型是否选择按它在索引里看到的某个 description 行动。这正是为什么这里验收测试是强制性的：它是*唯一*的保证，所以要在你的用户实际会用的模型上跑它，而不只是最强的那个。
+3. **完全没有技能系统：** 没有什么可注册的，*唯一*机制是模型按需读 `SKILL.md`。但模型读不到它找不到的东西：`using-superpowers/SKILL.md` **不**枚举可用的技能，所以只靠它自己，模型不会知道有哪些技能存在或它们的触发条件。你必须提供一条发现路径。两个选项，耐久性不同：(a) 生成一个技能索引（每个 `skills/*/SKILL.md` 的 `name` + `description` frontmatter），把它放在 `<EXTREMELY_IMPORTANT>` 包装内、与工具映射并列（上面的形态 B 配方），这样它就被去重守卫覆盖——但构建期索引会随着新技能增加而过时；或者 (b) 指示模型在运行时列出 `skills/*/SKILL.md` 并读它们的 frontmatter 来找匹配——慢一些但永不过时。除非你有理由不这么做，否则优先 (b)。两者都没有的话，一个无技能系统的移植加载了引导，却静默地从不触发任何其他技能。
 
-In cases 2 and 3, say plainly in your tool mapping that reading `SKILL.md` is the
-blessed path, so the model doesn't think it's violating the "never read skill
-files" rule. Don't go hunting for a `skillPaths`-style registration API in a
-harness that has no skill system — case 3 has none.
+在第 2 和第 3 种情况里，在你的工具映射里直白地说读 `SKILL.md` 是受认可的正路，这样模型就不会以为自己在违反“永不读技能文件”的规则。不要在一个没有技能系统的宿主里去找 `skillPaths` 风格的注册 API——第 3 种情况没有这东西。
 
-### Step 6 — Add tests
+### 第 6 步 —— 加测试
 
-Match the existing per-harness test style:
+与现有的各宿主测试风格保持一致：
 
-- **Shape A:** assert the hook's stdout has the exact JSON shape your harness
-  consumes, and that it contains the bootstrap. See `tests/hooks/test-session-start.sh`,
-  which validates each harness's output shape.
-- **Shape B:** a unit test that fakes the harness's plugin API and asserts the
-  lifecycle handlers register, the bootstrap injects once, the dedup guard
-  works, and (if relevant) compaction re-injection works. See
-  `tests/pi/test-pi-extension.mjs`. Add an isolated-install integration check in
-  the style of `tests/opencode/`.
-- If the bootstrap is cached, test that the cache behaves when the file is
-  missing (see the OpenCode caching tests).
+- **形态 A：** 断言 hook 的 stdout 具备你的宿主消费的精确 JSON 形态，并且包含引导。见 `tests/hooks/test-session-start.sh`，它验证每个宿主的输出形态。
+- **形态 B：** 一个单元测试，伪造宿主的插件 API，断言生命周期 handler 已注册、引导只注入一次、去重守卫工作，以及（如果相关）压缩后重新注入工作。见 `tests/pi/test-pi-extension.mjs`。再按 `tests/opencode/` 的风格加一个隔离安装的集成检查。
+- 如果引导被缓存，测试当文件缺失时缓存的行为（见 OpenCode 的缓存测试）。
 
-These automated tests cover the wiring; the live tmux run in Step 7 is what
-proves the integration actually triggers skills.
+这些自动化测试覆盖的是接线；第 7 步里的 tmux 实跑才是证明集成真的能触发技能的东西。
 
-### Step 7 — Install locally, then drive a live instance to verify
+### 第 7 步 —— 本地安装，然后驱动一个真实实例验证
 
-You cannot confirm a port works by reading code. You have to run the harness with
-your in-progress port loaded and watch a real session — which is also how you
-produce the transcript the PR requires.
+你无法靠读代码来确认一个移植能用。你必须用你正在进行的移植加载后跑起这个宿主，观察一次真实会话——这也是你产出 PR 所需 transcript 的方式。
 
-**Install locally.** Point a *local* instance of the harness at your working
-tree, not a published build:
+**本地安装。** 把宿主的*本地*实例指向你的工作树，而不是某个已发布的构建：
 
-- **Shape A / C:** install the plugin/extension from this repo's local path (or
-  symlink its directory into wherever the harness looks). Find the harness's
-  "install from a local directory / git checkout" path in its docs.
-- **Shape B:** register the local module — e.g. an `opencode.json` `plugin`
-  entry pointing at the local path, or pi resolving the `package.json` fields
-  from the repo.
+- **形态 A / C：** 从本仓库的本地路径安装插件/扩展（或把它的目录 symlink 到宿主查找的位置）。在它的文档里找到“从本地目录 / git checkout 安装”的路径。
+- **形态 B：** 注册本地模块——例如一个指向本地路径的 `opencode.json` `plugin` 条目，或 pi 从仓库解析 `package.json` 字段。
 
-Reinstall after each change and restart the harness, since the bootstrap loads at
-startup.
+每次改动后都重新安装并重启宿主，因为引导在启动时加载。
 
-**Drive it with tmux.** Most harnesses are interactive REPLs/TUIs that can't be
-driven by piping stdin, so run the harness inside a detached tmux session and
-control it with `send-keys` / `capture-pane`. A harness may advertise a
-non-interactive "run one prompt" mode (e.g. `opencode run "..."`) — try it for the
-quick smoke check, but **don't depend on it**: these modes are frequently flaky,
-auth-gated, or trust-gated (one real harness's `--print` mode hung and timed out
-with no output every time). Be ready to do *everything*, including the smoke
-check, through tmux.
+**用 tmux 驱动它。** 大多数宿主是交互式 REPL/TUI，没法靠管道 stdin 驱动，所以把宿主放在一个分离的 tmux 会话里跑，用 `send-keys` / `capture-pane` 控制。某个宿主可能宣传一种非交互的“跑一条 prompt”模式（例如 `opencode run "..."`）——可以拿它做快速烟雾检查，但**别依赖它**：这些模式常常不稳定、被鉴权挡住、或被信任检查挡住（某个真实宿主的 `--print` 模式每次都挂住、超时、零输出）。准备好连烟雾检查都*全程*通过 tmux 做。
 
-**Clear the gates first, or tmux stalls silently.** Many harnesses block on
-first-run onboarding, a "do you trust this folder?" prompt, a sandbox mode, or a
-permission gate — and a detached tmux session will just sit there with no error
-while it waits. Before the run, pre-trust your scratch directory (in the harness's
-settings/config) or be prepared to answer those prompts via `send-keys`, and
-account for the harness's startup time in your first `sleep`.
+**先把那些门槛清掉，否则 tmux 会静默卡住。** 许多宿主在首次运行时会卡在 onboarding、“是否信任此目录？”提示、沙箱模式或权限门槛——而一个分离的 tmux 会话会就这么停在那里，不报任何错。开跑之前，预先信任你的临时目录（在宿主的 settings/config 里），或者准备好通过 `send-keys` 回答这些提示，并在你的第一次 `sleep` 里把宿主的启动时间算进去。
 
 ```bash
-# 1. Launch the harness detached, in a throwaway project dir
+# 1. 分离启动宿主，放进一个用完即弃的项目目录
 mkdir -p /tmp/port-smoke
 tmux new-session -d -s port-test -c /tmp/port-smoke '<harness-launch-command>'
 
-# 2. Let it initialize — real TUIs take longer than you think (10s+ with a model
-#    handshake); tune this. THEN capture and clear any blocking modal before you
-#    type a prompt: first-run onboarding and "trust this folder?" are modal, so
-#    keystrokes sent during them select menu items instead of typing your prompt.
+# 2. 让它初始化——真实 TUI 比你想的慢（10s+ 含模型握手）；调整这个值。
+#    然后 capture 并清掉任何挡路的 modal，再敲 prompt：首次 onboarding 和
+#    “trust this folder?” 是 modal，在这期间发出的按键是在选菜单项而不是在敲你的 prompt。
 sleep 12
-tmux capture-pane -t port-test -p          # onboarding / trust prompt? answer it via send-keys first
-# (e.g. tmux send-keys -t port-test Enter   # to accept a trust prompt — inspect before assuming)
+tmux capture-pane -t port-test -p          # onboarding / trust prompt? 先用 send-keys 回答它
+# (例如 tmux send-keys -t port-test Enter   # 接受 trust prompt——先看清楚再假设)
 
-# 3. Smoke check: does the model know it has superpowers?
-#    Send the text and Enter as SEPARATE send-keys with a beat between them —
-#    sending them together races on some TUIs (Enter arrives before the text lands).
+# 3. 烟雾检查：模型知道它有 superpowers 吗？
+#    文本和 Enter 作为分开的 send-keys 发送，中间留一拍——一起发在某些 TUI 上会竞态
+#    （Enter 在文本落定之前就到了）。
 tmux send-keys -t port-test 'What are your superpowers?'; sleep 0.4; tmux send-keys -t port-test Enter
 sleep 5
-tmux capture-pane -t port-test -p          # reply should show it knows its skills
+tmux capture-pane -t port-test -p          # 回复应显示它知道自己的技能
 
-# 4. Acceptance test: exact prompt (note the escaped apostrophe), fresh session
+# 4. 验收测试：精确 prompt（注意转义的撇号），全新会话
 tmux send-keys -t port-test 'Let'\''s make a react todo list'; sleep 0.4; tmux send-keys -t port-test Enter
-# poll until the turn finishes — re-capture every few seconds, don't capture once
+# 轮询直到这一轮结束——每隔几秒重新 capture，不要只 capture 一次
 sleep 8
-tmux capture-pane -t port-test -p          # PASS = brainstorming triggers BEFORE any code
+tmux capture-pane -t port-test -p          # PASS = brainstorming 在任何代码之前触发
 
-# 5. Save the transcript for the PR, then clean up
+# 5. 保存 transcript 用于 PR，然后清理
 tmux capture-pane -t port-test -p > /tmp/port-smoke/transcript.txt
 tmux kill-session -t port-test
 ```
 
-tmux gotchas that bite here: wait after launch before the first capture; send the
-prompt text and `Enter` as *separate* `send-keys` calls with a short `sleep`
-between them (sending them together races on some TUIs), and `Enter` is a key name
-not `\n`; the agent's turn takes time, so **poll `capture-pane` in a loop** rather
-than capturing once; `capture-pane` shows only the visible pane, so for a long
-conversation use the harness's own transcript/log file as the record of truth;
-always `kill-session` when done.
+这里会咬人的 tmux 坑：启动后等一下再做第一次 capture；把 prompt 文本和 `Enter` 作为*分开的* `send-keys` 调用，中间留一个短 `sleep`（一起发在某些 TUI 上会竞态），并且 `Enter` 是一个键名而不是 `\n`；agent 的一轮要花时间，所以**在一个循环里 poll `capture-pane`**，而不是只 capture 一次；`capture-pane` 只显示可见面板，所以对于长对话，用宿主自己的 transcript/log 文件作为真相记录；收尾时一定 `kill-session`。
 
-If the smoke check shows the model *doesn't* know it has superpowers, the
-bootstrap isn't loading — fix that before bothering with the acceptance test.
+如果烟雾检查显示模型*不*知道它有 superpowers，说明引导没加载——先修这个，再去管验收测试。
 
 ---
 
-## Part 6 — Distribution and release
+## 第 6 部分 —— 分发与发布
 
-A working integration in this repo isn't usable until a real user can install
-it. Distribution differs per harness ecosystem — find yours:
+本仓库里一个能用的集成，要等到真实用户能安装它，才算可用。分发因宿主生态而异——找到你那个：
 
-| Channel | Example | What you do |
+| 渠道 | 例子 | 你做什么 |
 |---|---|---|
-| Native plugin marketplace | Claude Code | Register in `.claude-plugin/marketplace.json`; users `/plugin install`. The external `superpowers-marketplace` repo is the source of truth users install from — see the release steps in `CLAUDE.md`. |
-| External marketplace fork, synced by script | Codex | `scripts/sync-to-codex-plugin.sh` rsyncs the tracked plugin files into a separate fork repo and opens a PR. Read its include/exclude list so you ship the right tree (it deliberately drops repo-internal dirs and other harnesses' dotdirs). |
-| Git-URL extension install | Gemini, Kimi Code, OpenCode | Users install from a git URL (`gemini extensions install …`; Kimi Code `/plugins install …`; an `opencode.json` `plugin` array entry). Document the exact command. |
-| Package-manifest fields | pi | Declared through fields in the repo-root `package.json`; users install via the harness's package command. |
-| Local installer (plugin install) | Antigravity (`agy`) | A small `install.sh` that runs the harness's own `agy plugin install` against a staging dir holding the manifest, the skills, and a generated `contextFileName` context file (the bootstrap). Everything arrives through the install mechanism — *not* by editing the user's config (see below). |
+| 原生插件市场 | Claude Code | 在 `.claude-plugin/marketplace.json` 注册；用户 `/plugin install`。外部仓库 `superpowers-marketplace` 是用户实际安装的真相来源——见 `CLAUDE.md` 里的发布步骤。 |
+| 外部市场 fork，由脚本同步 | Codex | `scripts/sync-to-codex-plugin.sh` 把被跟踪的插件文件 rsync 到一个独立的 fork 仓库并开 PR。读它的 include/exclude 列表，确保你发布的目录树正确（它有意丢掉仓库内部目录和其他宿主的点目录）。 |
+| Git-URL 扩展安装 | Gemini、Kimi Code、OpenCode | 用户从一个 git URL 安装（`gemini extensions install …`；Kimi Code `/plugins install …`；一个 `opencode.json` 的 `plugin` 数组条目）。文档化精确命令。 |
+| Package-manifest 字段 | pi | 通过仓库根 `package.json` 的字段声明；用户用宿主的 package 命令安装。 |
+| 本地安装器（plugin install） | Antigravity（`agy`） | 一个小 `install.sh`，对着一个暂存目录运行宿主自己的 `agy plugin install`，暂存目录里放好 manifest、技能，以及一个生成的 `contextFileName` 上下文文件（即引导）。一切都通过安装机制送达——*不是*靠编辑用户配置（见下文）。 |
 
-Then:
+然后：
 
-- **A plugin installer may silently strip *undeclared* files — so make the
-  bootstrap a file the installer *recognizes*, never a user-config edit.** A
-  `plugin install` typically copies only the components it knows about
-  (skills/agents/commands/mcp/hooks/context) and discards anything else, so a
-  context file the manifest doesn't declare just vanishes from the install. The
-  fix is **not** to give up and write into the user's config (**rule 2**) — it's
-  to declare the bootstrap as a recognized component. In escalation order:
-  - **Ship a context file the manifest declares.** If the harness has a
-    `contextFileName`-style field (an extension-declared file it loads every
-    session), that is the strongest clean bootstrap: declare it, and the installer
-    preserves it *and* the harness loads it. Generate it at install time from the
-    live `using-superpowers/SKILL.md` + the tool mapping (wrapped in
-    `<EXTREMELY_IMPORTANT>`) so the installed bootstrap never drifts. This is what
-    `.antigravity-plugin/install.sh` does — `agy plugin install` reports
-    `✔ context : ANTIGRAVITY.md`, and a clean session reads `using-superpowers`'s
-    SKILL.md, loads `brainstorming`, and enters the brainstorming flow before any
-    code. **Verify with a marker** that the installer keeps the file and the
-    harness loads it: one porter wrongly concluded it couldn't, because they
-    shipped the file *without* declaring `contextFileName` and it was stripped as
-    unrecognized.
-  - **Otherwise lean on the installed `using-superpowers` skill itself.** If the
-    harness surfaces each installed skill's name + description at session start,
-    the `using-superpowers` description ("Use when starting any conversation…")
-    can prompt the model to load it — installing the skill *is* the bootstrap.
-    Softer (no guaranteed wrapper; it carries triggering but not the tool mapping
-    — see Step 5), so prefer the declared context file when available.
-  - If neither works, the harness cannot be cleanly supported yet — **say so**
-    and raise it, rather than hand-editing the user's config.
+- **一个插件安装器可能静默剥掉*未声明*的文件——所以要把引导做成一个安装器*认得*的文件，绝不能改成编辑用户配置。** `plugin install` 通常只拷贝它认识的组件（skills/agents/commands/mcp/hooks/context），其他一律丢弃，所以一个 manifest 没声明的上下文文件在安装后就消失了。修复办法**不是**放弃并去写用户配置（**规则 2**）——而是把引导声明为一个被认得的组件。按升级顺序：
+  - **发布一个 manifest 声明的上下文文件。** 如果宿主有 `contextFileName` 风格的字段（一个扩展声明、每次会话都加载的文件），这是最强、最干净的引导：声明它，安装器既会保留它，*而且*宿主也会加载它。在安装时从活的 `using-superpowers/SKILL.md` + 工具映射（包在 `<EXTREMELY_IMPORTANT>` 里）生成它，这样已安装的引导永不漂移。这正是 `.antigravity-plugin/install.sh` 做的事——`agy plugin install` 会报告 `✔ context : ANTIGRAVITY.md`，而一次干净会话会读 `using-superpowers` 的 SKILL.md、加载 `brainstorming`，并在任何代码之前进入 brainstorming 流程。**用标记验证**安装器保留了文件且宿主加载它：曾经有个移植者错误地结论说做不到，因为他们发布文件时*没有*声明 `contextFileName`，于是它作为未识别文件被剥掉。
+  - **否则，就依靠已安装的 `using-superpowers` 技能本身。** 如果宿主在会话开始时把每个已安装技能的 name + description 呈现出来，`using-superpowers` 的 description（“Use when starting any conversation…”）就能提示模型去加载它——安装这个技能*本身*就是引导。更弱（没有保证的包装；它承载触发但不承载工具映射——见第 5 步），所以有声明式上下文文件时优先用它。
+  - 如果两者都不行，这个宿主目前还不能被干净地支持——**如实说明**并上报，而不是手改用户配置。
 
-- **Write install docs.** A `docs/README.<harness>.md` and/or a
-  `.<harness>/INSTALL.md` (see `docs/README.opencode.md` and
-  `.opencode/INSTALL.md`), plus an install section in the top-level `README.md`.
-  The only supported install action is **running the harness's own install
-  command** (`agy plugin install`, `gemini extensions install`, `/plugin
-  install`, etc.). Hand-copying skill files and editing the user's global/personal
-  config are *both* off-limits (rule 2 / the PR rules). If the harness has no
-  install command at all — its only surface is a user-owned config file — then it
-  fails the "deliver via install mechanism" rule, and you should raise that rather
-  than ship an installer that edits the user's files.
-- **Register the version.** If your harness introduces a *new* versioned
-  manifest, add its path and version field to `.version-bump.json` so
-  `scripts/bump-version.sh` keeps it in lockstep (read that file to see what's
-  currently tracked). A new manifest that isn't registered there will ship a
-  stale version. If your harness instead rides an already-tracked file — pi
-  declares itself in the repo-root `package.json`, which is already listed —
-  there's nothing new to add.
-- **If no existing channel fits, you're standing up a new one.** None of the four
-  rows may match your harness. If it needs a Codex-style external fork sync,
-  `scripts/sync-to-codex-plugin.sh` is the template to clone (note its anchored
-  include/exclude list and its PR automation). And whenever you add a new
-  per-harness directory, add it to the *other* harnesses' sync excludes (e.g. the
-  EXCLUDES list in `sync-to-codex-plugin.sh`) so your dotdir doesn't leak into
-  their distributions.
+- **写安装文档。** 一个 `docs/README.<harness>.md` 和/或 `.<harness>/INSTALL.md`（见 `docs/README.opencode.md` 和 `.opencode/INSTALL.md`），外加顶层 `README.md` 里的一节安装说明。唯一受支持的安装动作是**运行宿主自己的安装命令**（`agy plugin install`、`gemini extensions install`、`/plugin install` 等）。手动复制技能文件和编辑用户全局/个人配置*都*在禁止之列（规则 2 / PR 规则）。如果宿主根本没有安装命令——它的唯一入口是一个用户拥有的配置文件——那它就过不了“通过安装机制投递”这条规则，你应该上报，而不是发布一个去编辑用户文件的安装器。
+- **注册版本。** 如果你的宿主引入了一份*新的*带版本 manifest，把它的路径和版本字段加进 `.version-bump.json`，这样 `scripts/bump-version.sh` 就能让它保持同步（读那个文件看当前跟踪了哪些）。一个没在那里注册的新 manifest 会发布陈旧版本。如果你的宿主骑在一个已被跟踪的文件上——pi 在仓库根 `package.json` 里声明自己，而它已经被列出来了——那就没什么要新增的。
+- **如果没有现成渠道合适，你就是在新建一个。** 上面四行可能都不匹配你的宿主。如果它需要 Codex 风格的外部 fork 同步，`scripts/sync-to-codex-plugin.sh` 是要克隆的模板（注意它锚定的 include/exclude 列表和它的 PR 自动化）。并且每当你新增一个按宿主分的目录，都要把它加进*其他*宿主的同步排除项里（例如 `sync-to-codex-plugin.sh` 里的 EXCLUDES 列表），这样你的点目录不会泄漏进它们的分发里。
 
 ---
 
-## Part 7 — Cross-platform / Windows
+## 第 7 部分 —— 跨平台 / Windows
 
-Only relevant to the shell-hook shape. `hooks/run-hook.cmd` is a polyglot: a
-single file that's valid as both a Windows batch script and a Unix shell script.
-On Windows, `cmd.exe` runs the batch portion, which locates `bash` (Git for
-Windows, then `bash` on PATH) and runs the named hook script; if no bash is
-found it exits cleanly so the harness still works, just without injection. On
-Unix, the leading `:` makes the batch block a no-op and the shell runs the
-script directly.
+只与 shell-hook 形态相关。`hooks/run-hook.cmd` 是一个 polyglot：同一个文件既是合法的 Windows 批处理脚本，也是合法的 Unix shell 脚本。在 Windows 上，`cmd.exe` 运行批处理部分，它会找到 `bash`（先是 Git for Windows，然后是 PATH 上的 `bash`）并运行指定的 hook 脚本；如果找不到 bash，它就干净退出，这样宿主仍能工作，只是没有注入。在 Unix 上，开头的 `:` 让批处理块变成 no-op，shell 直接跑脚本。
 
-Two rules this enforces, which you must respect:
+它强制了两条规则，你也必须遵守：
 
-- **Hook scripts are extensionless** (`session-start`, not `session-start.sh`).
-  Claude Code's Windows handling prepends `bash` to any command containing
-  `.sh`, which would double-invoke. Name your hook script without an extension.
-- Don't write per-OS variants of the hook script. One extensionless bash script
-  plus the polyglot wrapper covers all three platforms.
+- **hook 脚本没有扩展名**（`session-start`，不是 `session-start.sh`）。Claude Code 在 Windows 上会对任何包含 `.sh` 的命令前置 `bash`，那会造成二次调用。给你的 hook 脚本起不带扩展名的名字。
+- 不要为 hook 脚本写按 OS 区分的变体。一个无扩展名的 bash 脚本加这个 polyglot 包装器就覆盖了全部三个平台。
 
-`hooks/run-hook.cmd` itself is the authoritative implementation — read it. See
-`docs/windows/polyglot-hooks.md` for the background and rationale behind the
-dispatcher pattern.
+`hooks/run-hook.cmd` 本身就是权威实现——去读它。背景和分发器模式的设计理由见 `docs/windows/polyglot-hooks.md`。
 
 ---
 
-## Part 8 — Submitting the PR
+## 第 8 部分 —— 提交 PR
 
-- Target the **`dev`** branch. One harness per PR.
-- Fill in the PR template's **"New harness support"** section and paste the
-  complete acceptance-test transcript (the "Let's make a react todo list"
-  session showing `brainstorming` auto-triggering). A PR without this proof will
-  be closed.
-- Superpowers is a zero-dependency plugin. Don't add a third-party runtime
-  dependency. Adding a new harness is the one carve-out the contributor rules
-  allow, and even then keep it to what the integration strictly requires —
-  type-only imports that compile away are fine; runtime packages are not.
-- Don't touch skill bodies (Part 1). If you found yourself editing a `SKILL.md`
-  to make the port work, the fix belongs in your tool mapping instead.
+- 目标分支是 **`dev`**。每个 PR 只做一个宿主。
+- 填写 PR 模板的 **“New harness support”** 一节，并粘贴完整的验收测试 transcript（那段显示 `brainstorming` 自动触发的“Let's make a react todo list”会话）。没有这份证据的 PR 会被关掉。
+- Superpowers 是零依赖插件。不要添加第三方运行时依赖。新增宿主是贡献者规则里唯一允许的例外，即便如此，也只保留集成严格必需的部分——只用于类型、编译后消失的 import 可以；运行时包不行。
+- 不要改技能正文（第 1 部分）。如果你发现自己为了移植能跑而去改某个 `SKILL.md`，那修复应该落在你的工具映射里。
 
 ---
 
-## Appendix A — Reference integrations (current)
+## 附录 A —— 参考实现（当前）
 
-Use this as the live index; when in doubt, read the files, not this table.
+把这当作活跃索引；有疑问就读文件，不要读这张表。
 
-| Harness | Entry point | Bootstrap mechanism | Tool mapping | Tests | Distribution |
+| 宿主 | 入口点 | 引导机制 | 工具映射 | 测试 | 分发 |
 |---|---|---|---|---|---|
-| Claude Code | `.claude-plugin/plugin.json` + `hooks/hooks.json` | shell hook → `hooks/session-start` (`hookSpecificOutput.additionalContext`) | native `Skill` tool; `references/claude-code-tools.md` | `tests/hooks/` | marketplace |
-| Codex | `.codex-plugin/plugin.json` + `hooks/hooks-codex.json` | shell hook → `hooks/session-start-codex` | `references/codex-tools.md` | `tests/codex-plugin-sync/`, `tests/hooks/` | fork sync (`scripts/sync-to-codex-plugin.sh`) |
-| Cursor | `.cursor-plugin/plugin.json` + `hooks/hooks-cursor.json` | shell hook → `hooks/session-start` (`additional_context`) | `references/claude-code-tools.md` | `tests/hooks/` | hand-authored |
-| Copilot CLI | (shares Claude Code hook path; `COPILOT_CLI` env) | shell hook → `hooks/session-start` (`additionalContext`) | `references/copilot-tools.md` | `tests/hooks/` | — |
-| Gemini CLI | `gemini-extension.json` + `GEMINI.md` | instructions file `@`-includes bootstrap + mapping | `references/gemini-tools.md` | — | `gemini extensions install` |
-| Kimi Code | `.kimi-plugin/plugin.json` | manifest `sessionStart.skill` loads `using-superpowers` | inline `skillInstructions` in manifest | `tests/kimi/` | marketplace or `/plugins install` GitHub URL |
-| OpenCode | `.opencode/plugins/superpowers.js` (declared via root `package.json` `main`) | in-process: `config` hook registers skills dir; `experimental.chat.messages.transform` injects user message | inline in `superpowers.js` | `tests/opencode/` | `opencode.json` plugin git URL |
-| pi | `.pi/extensions/superpowers.ts` | in-process: `resources_discover` registers skills; `context` event injects user message; lifecycle-flag + compaction-aware | `piToolMapping()` inline **and** `references/pi-tools.md` | `tests/pi/` | repo-root `package.json` fields |
+| Claude Code | `.claude-plugin/plugin.json` + `hooks/hooks.json` | shell hook → `hooks/session-start`（`hookSpecificOutput.additionalContext`） | 原生 `Skill` 工具；`references/claude-code-tools.md` | `tests/hooks/` | marketplace |
+| Codex | `.codex-plugin/plugin.json` + `hooks/hooks-codex.json` | shell hook → `hooks/session-start-codex` | `references/codex-tools.md` | `tests/codex-plugin-sync/`、`tests/hooks/` | fork 同步（`scripts/sync-to-codex-plugin.sh`） |
+| Cursor | `.cursor-plugin/plugin.json` + `hooks/hooks-cursor.json` | shell hook → `hooks/session-start`（`additional_context`） | `references/claude-code-tools.md` | `tests/hooks/` | 手工编写 |
+| Copilot CLI | （共用 Claude Code 的 hook 路径；`COPILOT_CLI` 环境变量） | shell hook → `hooks/session-start`（`additionalContext`） | `references/copilot-tools.md` | `tests/hooks/` | — |
+| Gemini CLI | `gemini-extension.json` + `GEMINI.md` | 指令文件 `@`-include 引导 + 映射 | `references/gemini-tools.md` | — | `gemini extensions install` |
+| Kimi Code | `.kimi-plugin/plugin.json` | manifest 的 `sessionStart.skill` 加载 `using-superpowers` | 内联在 manifest 的 `skillInstructions` | `tests/kimi/` | marketplace 或 `/plugins install` GitHub URL |
+| OpenCode | `.opencode/plugins/superpowers.js`（通过根 `package.json` 的 `main` 声明） | 进程内：`config` hook 注册技能目录；`experimental.chat.messages.transform` 注入 user 消息 | 内联在 `superpowers.js` | `tests/opencode/` | `opencode.json` 插件 git URL |
+| pi | `.pi/extensions/superpowers.ts` | 进程内：`resources_discover` 注册技能；`context` 事件注入 user 消息；带生命周期标志 + 感知压缩 | 内联 `piToolMapping()` **以及** `references/pi-tools.md` | `tests/pi/` | 仓库根 `package.json` 字段 |
 
-## Appendix B — Gotchas that have bitten porters
+## 附录 B —— 咬过移植者的坑
 
-- **Opt-in isn't a port.** If your human partner has to do anything per session
-  to get Superpowers, the acceptance test fails. Re-read Part 2.
-- **Wrong JSON field → silent failure or double injection.** Shape A only.
-  Confirm the exact field/nesting; Claude Code reads two fields without dedup.
-- **Hook-config schema varies per harness.** Shape A. Cursor's `hooks-cursor.json`
-  looks nothing like the Claude/Codex one (`version`, lowercase `sessionStart`,
-  relative command, no `matcher`/`type`/`async`). Match the closest existing file.
-- **Plugin-root env var differs per harness.** Shape A. The hook command uses
-  `${CLAUDE_PLUGIN_ROOT}` (Claude), `${PLUGIN_ROOT}` (Codex), or a relative path
-  (Cursor). Use what your harness exports; the script re-derives the root itself.
-- **System-message injection.** Shape B injects a *user* message on purpose
-  (#750, #894). Don't "fix" it to a system message.
-- **Per-step vs per-turn callbacks.** OpenCode fires every step (per-call dedup
-  guard); pi fires per turn (lifecycle flag + `agent_end` reset). Copying one
-  harness's dedup strategy onto the other's callback frequency breaks injection.
-- **Message-object shape is per-harness.** Shape B. pi and OpenCode use
-  incompatible shapes; discover yours, don't copy a reference's object literal.
-- **Hunting for a skill-registration API that doesn't exist.** A harness with no
-  skill system (not just no `Skill` tool) has nothing to register — the model
-  reads `SKILL.md` on demand. Don't assume a `skillPaths` equivalent exists.
-- **Mapping in two places.** For in-process plugins the mapping may live both
-  inline and in a `references/` file (pi). Update both.
-- **The "never read skill files" line.** It means "don't bypass your platform's
-  skill-loading mechanism," not "never use file-read." On a no-skill-tool harness
-  that mechanism *is* reading `SKILL.md` — say so explicitly in the mapping
-  (Part 5).
-- **`.sh` on Windows.** Keep hook scripts extensionless (Part 7).
-- **Unregistered version.** A new manifest not added to `.version-bump.json`
-  ships stale (Part 6).
-- **Editing skills to fit the harness.** Never. The fix goes in the tool mapping.
+- **需要 opt-in 就不是移植。** 如果你的搭档每次会话都得做点什么才能让 Superpowers 起作用，验收测试就会失败。重读第 2 部分。
+- **JSON 字段错了 → 静默失败或双重注入。** 仅形态 A。确认精确的字段/嵌套；Claude Code 不去重地读两个字段。
+- **hook 配置的 schema 每个宿主都不同。** 形态 A。Cursor 的 `hooks-cursor.json` 和 Claude/Codex 的看起来毫无相似之处（`version`、小写 `sessionStart`、相对路径命令、无 `matcher`/`type`/`async`）。匹配最接近的现有文件。
+- **plugin-root 环境变量每个宿主都不同。** 形态 A。hook 命令用 `${CLAUDE_PLUGIN_ROOT}`（Claude）、`${PLUGIN_ROOT}`（Codex）或相对路径（Cursor）。用你宿主导出的那个；脚本会自己重新推导根路径。
+- **system 消息注入。** 形态 B 故意注入一条 *user* 消息（#750、#894）。不要把它“修”成 system 消息。
+- **每步 vs 每轮回调。** OpenCode 每步触发（逐次调用去重守卫）；pi 每轮触发（生命周期标志 + `agent_end` 重置）。把一个宿主的去重策略套到另一个的回调频率上，会破坏注入。
+- **message-object 形态每个宿主都不同。** 形态 B。pi 和 OpenCode 用互不兼容的形态；去发现你自己的，别复制参考的对象字面值。
+- **到处找一个不存在的技能注册 API。** 一个没有技能系统（不只是没有 `Skill` 工具）的宿主没有可注册的东西——模型按需读 `SKILL.md`。不要假设存在 `skillPaths` 等价物。
+- **映射在两处。** 对于进程内插件，映射可能既内联又在 `references/` 文件里（pi）。两处都更新。
+- **“永不读技能文件”那句话。** 它的意思是“不要绕过你平台的技能加载机制”，不是“永远不用文件读”。在一个无技能工具的宿主上，那个机制*就是*读 `SKILL.md`——在映射里明说这一点（第 5 部分）。
+- **Windows 上的 `.sh`。** 保持 hook 脚本无扩展名（第 7 部分）。
+- **未注册的版本。** 一个没加到 `.version-bump.json` 的新 manifest 会发布陈旧版本（第 6 部分）。
+- **为了让宿主适配而改技能。** 绝不。修复应该落在工具映射里。

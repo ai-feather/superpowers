@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Extract one task's full text from an implementation plan into a file the
-# implementer reads in one call, so the task text never has to be pasted
-# through the controller's context.
+# 从实现计划中提取一个任务的完整文本到一个文件，供实现者一次性读取，
+# 这样任务文本永远不必通过控制器的上下文粘贴。
 #
-# Usage: task-brief PLAN_FILE TASK_NUMBER [OUTFILE]
-# Default OUTFILE: <repo-root>/.superpowers/sdd/task-<N>-brief.md
-# (per worktree; concurrent runs in the same working tree share it).
+# 用法：task-brief PLAN_FILE TASK_NUMBER [OUTFILE]
+# 默认 OUTFILE：<repo-root>/.superpowers/sdd/task-<N>-brief.md
+# （按 worktree；同一工作树中的并发运行会共享它）。
 set -euo pipefail
 
 if [ $# -lt 2 ] || [ $# -gt 3 ]; then

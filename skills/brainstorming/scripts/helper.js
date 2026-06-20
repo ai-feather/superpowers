@@ -1,9 +1,9 @@
 (function() {
   const MIN_RECONNECT_MS = 500;
   const MAX_RECONNECT_MS = 30000;
-  const TOMBSTONE_AFTER_MS = 15000; // show the "paused" overlay after this long disconnected
+  const TOMBSTONE_AFTER_MS = 15000; // 断开连接达到这么久后，显示"已暂停"遮罩
 
-  // Pure: next backoff delay (doubles, capped). Exported for unit tests.
+  // 纯函数：下一个退避延迟（翻倍，有上限）。为单元测试导出。
   function nextReconnectDelay(current, max) {
     return Math.min(current * 2, max);
   }
@@ -11,7 +11,7 @@
     module.exports = { nextReconnectDelay, MIN_RECONNECT_MS, MAX_RECONNECT_MS, TOMBSTONE_AFTER_MS };
   }
 
-  // Everything below is browser-only; bail out when loaded in Node (tests).
+  // 下面这些仅用于浏览器；在 Node（测试）中加载时直接退出。
   if (typeof window === 'undefined') return;
 
   let ws = null;
@@ -43,7 +43,7 @@
     }
   }
 
-  // Reflect connection state in the frame's status pill (absent on full-doc screens).
+  // 在框架的状态指示条上反映连接状态（完整文档屏幕上没有）。
   function setStatus(state) {
     const el = document.querySelector('.status');
     if (!el) return;
@@ -58,7 +58,7 @@
     el.style.setProperty('--status-color', color);
   }
 
-  // Self-styled so it works on framed and full-document screens alike.
+  // 自带样式，这样它在带框架和完整文档的屏幕上都能工作。
   function showTombstone() {
     if (tombstoneShown) return;
     tombstoneShown = true;
@@ -88,9 +88,9 @@
       setStatus('connected');
       eventQueue.forEach(e => ws.send(JSON.stringify(e)));
       eventQueue = [];
-      // Recovered from a tombstoned outage (e.g. the server restarted on the same
-      // port) — reload through the keyed bootstrap when possible so the cookie is
-      // refreshed before the visible URL returns to bare /.
+      // 从一次已显示墓碑的中断中恢复（例如服务器在同一端口上重启）——
+      // 尽可能通过带密钥的引导页重载，以便在可见 URL 回到光秃秃的 / 之前
+      // 刷新 cookie。
       if (recovered) reloadAfterRecovery();
     };
 
@@ -113,7 +113,7 @@
       reconnectDelay = nextReconnectDelay(reconnectDelay, MAX_RECONNECT_MS);
     };
 
-    // Let onclose own reconnection so we don't schedule it twice.
+    // 让 onclose 负责重连，这样我们不会重复调度。
     ws.onerror = () => { try { ws.close(); } catch (e) {} };
   }
 
@@ -126,7 +126,7 @@
     }
   }
 
-  // Capture clicks on choice elements
+  // 捕获对选择元素的点击
   document.addEventListener('click', (e) => {
     const target = e.target.closest('[data-choice]');
     if (!target) return;
@@ -140,7 +140,7 @@
 
   });
 
-  // Frame UI: selection tracking
+  // 框架 UI：选择追踪
   window.selectedChoice = null;
 
   window.toggleSelect = function(el) {
@@ -157,7 +157,7 @@
     window.selectedChoice = el.dataset.choice;
   };
 
-  // Expose API for explicit use
+  // 暴露 API 供显式使用
   window.brainstorm = {
     send: sendEvent,
     choice: (value, metadata = {}) => sendEvent({ type: 'choice', value, ...metadata })

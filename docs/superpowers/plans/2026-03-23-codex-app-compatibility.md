@@ -1,41 +1,41 @@
-# Codex App Compatibility Implementation Plan
+# Codex App 兼容性实现计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **致代理工作者：** 必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 来按任务实现本计划。步骤使用复选框（`- [ ]`）语法进行跟踪。
 
-**Goal:** Make `using-git-worktrees`, `finishing-a-development-branch`, and related skills work in the Codex App's sandboxed worktree environment without breaking existing behavior.
+**目标：** 让 `using-git-worktrees`、`finishing-a-development-branch` 及相关技能在 Codex App 的沙箱化 worktree 环境中工作，同时不破坏既有行为。
 
-**Architecture:** Read-only environment detection (`git-dir` vs `git-common-dir`) at the start of two skills. If already in a linked worktree, skip creation. If on detached HEAD, emit a handoff payload instead of the 4-option menu. Sandbox fallback catches permission errors during worktree creation.
+**架构：** 在两个技能开头进行只读环境检测（`git-dir` vs `git-common-dir`）。如果已在 linked worktree 中，则跳过创建。如果在 detached HEAD 上，则输出交接载荷（handoff payload）而非 4 选项菜单。沙箱兜底捕获 worktree 创建期间的权限错误。
 
-**Tech Stack:** Git, Markdown (skill files are instruction documents, not executable code)
+**技术栈：** Git、Markdown（技能文件是指令文档，不是可执行代码）
 
-**Spec:** `docs/superpowers/specs/2026-03-23-codex-app-compatibility-design.md`
+**规格：** `docs/superpowers/specs/2026-03-23-codex-app-compatibility-design.md`
 
 ---
 
-## File Structure
+## 文件结构
 
-| File | Responsibility | Action |
+| 文件 | 职责 | 操作 |
 |---|---|---|
-| `skills/using-git-worktrees/SKILL.md` | Worktree creation + isolation | Add Step 0 detection + sandbox fallback |
-| `skills/finishing-a-development-branch/SKILL.md` | Branch finishing workflow | Add Step 1.5 detection + cleanup guard |
-| `skills/subagent-driven-development/SKILL.md` | Plan execution with subagents | Update Integration description |
-| `skills/executing-plans/SKILL.md` | Plan execution inline | Update Integration description |
-| `skills/using-superpowers/references/codex-tools.md` | Codex platform reference | Add detection + finishing docs |
+| `skills/using-git-worktrees/SKILL.md` | worktree 创建 + 隔离 | 新增 Step 0 检测 + 沙箱兜底 |
+| `skills/finishing-a-development-branch/SKILL.md` | 分支收尾工作流 | 新增 Step 1.5 检测 + 清理守卫 |
+| `skills/subagent-driven-development/SKILL.md` | 用子代理执行计划 | 更新 Integration 说明 |
+| `skills/executing-plans/SKILL.md` | 内联执行计划 | 更新 Integration 说明 |
+| `skills/using-superpowers/references/codex-tools.md` | Codex 平台参考 | 新增检测 + 收尾文档 |
 
 ---
 
-### Task 1: Add Step 0 to `using-git-worktrees`
+### Task 1: 为 `using-git-worktrees` 新增 Step 0
 
-**Files:**
-- Modify: `skills/using-git-worktrees/SKILL.md:14-15` (insert after Overview, before Directory Selection Process)
+**文件：**
+- Modify: `skills/using-git-worktrees/SKILL.md:14-15`（在 Overview 之后、Directory Selection Process 之前插入）
 
-- [ ] **Step 1: Read the current skill file**
+- [ ] **Step 1: 阅读当前技能文件**
 
-Read `skills/using-git-worktrees/SKILL.md` in full. Identify the exact insertion point: after the "Announce at start" line (line 14) and before "## Directory Selection Process" (line 16).
+完整阅读 `skills/using-git-worktrees/SKILL.md`。确定精确插入点：在 "Announce at start" 行（第 14 行）之后、`## Directory Selection Process`（第 16 行）之前。
 
-- [ ] **Step 2: Insert Step 0 section**
+- [ ] **Step 2: 插入 Step 0 小节**
 
-Insert the following between the Overview section and "## Directory Selection Process":
+在 Overview 小节与 `## Directory Selection Process` 之间插入以下内容：
 
 ```markdown
 ## Step 0: Check if Already in an Isolated Workspace
@@ -63,14 +63,14 @@ After reporting, STOP. Do not continue to Directory Selection or Creation Steps.
 **Sandbox fallback:** If you proceed to Creation Steps but `git worktree add -b` fails with a permission error (e.g., "Operation not permitted"), treat this as a late-detected restricted environment. Fall back to the behavior above — run setup and baseline tests in the current directory, report accordingly, and STOP.
 ```
 
-- [ ] **Step 3: Verify the insertion**
+- [ ] **Step 3: 验证插入**
 
-Read the file again. Confirm:
-- Step 0 appears between Overview and Directory Selection Process
-- The rest of the file (Directory Selection, Safety Verification, Creation Steps, etc.) is unchanged
-- No duplicate sections or broken markdown
+再次阅读文件。确认：
+- Step 0 出现在 Overview 与 Directory Selection Process 之间
+- 文件其余部分（Directory Selection、Safety Verification、Creation Steps 等）未变
+- 无重复小节或破损的 markdown
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: 提交**
 
 ```bash
 git add skills/using-git-worktrees/SKILL.md
@@ -82,14 +82,14 @@ sandbox fallback for permission errors on git worktree add."
 
 ---
 
-### Task 2: Update `using-git-worktrees` Integration section
+### Task 2: 更新 `using-git-worktrees` 的 Integration 小节
 
-**Files:**
-- Modify: `skills/using-git-worktrees/SKILL.md:211-215` (Integration > Called by)
+**文件：**
+- Modify: `skills/using-git-worktrees/SKILL.md:211-215`（Integration > Called by）
 
-- [ ] **Step 1: Update the three "Called by" entries**
+- [ ] **Step 1: 更新三条 "Called by" 条目**
 
-Change lines 212-214 from:
+将第 212-214 行从：
 
 ```markdown
 - **brainstorming** (Phase 4) - REQUIRED when design is approved and implementation follows
@@ -97,7 +97,7 @@ Change lines 212-214 from:
 - **executing-plans** - REQUIRED before executing any tasks
 ```
 
-To:
+改为：
 
 ```markdown
 - **brainstorming** - REQUIRED: Ensures isolated workspace (creates one or verifies existing)
@@ -105,11 +105,11 @@ To:
 - **executing-plans** - REQUIRED: Ensures isolated workspace (creates one or verifies existing)
 ```
 
-- [ ] **Step 2: Verify the Integration section**
+- [ ] **Step 2: 验证 Integration 小节**
 
-Read the Integration section. Confirm all three entries are updated, "Pairs with" is unchanged.
+阅读 Integration 小节。确认三条条目均已更新，"Pairs with" 未变。
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: 提交**
 
 ```bash
 git add skills/using-git-worktrees/SKILL.md
@@ -120,18 +120,18 @@ Clarify that skill ensures a workspace exists, not that it always creates one."
 
 ---
 
-### Task 3: Add Step 1.5 to `finishing-a-development-branch`
+### Task 3: 为 `finishing-a-development-branch` 新增 Step 1.5
 
-**Files:**
-- Modify: `skills/finishing-a-development-branch/SKILL.md:38` (insert after Step 1, before Step 2)
+**文件：**
+- Modify: `skills/finishing-a-development-branch/SKILL.md:38`（在 Step 1 之后、Step 2 之前插入）
 
-- [ ] **Step 1: Read the current skill file**
+- [ ] **Step 1: 阅读当前技能文件**
 
-Read `skills/finishing-a-development-branch/SKILL.md` in full. Identify the insertion point: after "**If tests pass:** Continue to Step 2." (line 38) and before "### Step 2: Determine Base Branch" (line 40).
+完整阅读 `skills/finishing-a-development-branch/SKILL.md`。确定精确插入点：在 "**If tests pass:** Continue to Step 2."（第 38 行）之后、`### Step 2: Determine Base Branch`（第 40 行）之前。
 
-- [ ] **Step 2: Insert Step 1.5 section**
+- [ ] **Step 2: 插入 Step 1.5 小节**
 
-Insert the following between Step 1 and Step 2:
+在 Step 1 与 Step 2 之间插入以下内容：
 
 ```markdown
 ### Step 1.5: Detect Environment
@@ -179,15 +179,15 @@ Proceed to Step 2 and present the 4-option menu as normal.
 Proceed to Step 2 and present the 4-option menu as normal.
 ```
 
-- [ ] **Step 3: Verify the insertion**
+- [ ] **Step 3: 验证插入**
 
-Read the file again. Confirm:
-- Step 1.5 appears between Step 1 and Step 2
-- Steps 2-5 are unchanged
-- Path A handoff includes commit SHA and data loss warning
-- Paths B and C proceed to Step 2 normally
+再次阅读文件。确认：
+- Step 1.5 出现在 Step 1 与 Step 2 之间
+- Step 2-5 未变
+- Path A 的交接载荷包含 commit SHA 和数据丢失警告
+- Path B 和 Path C 正常进入 Step 2
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: 提交**
 
 ```bash
 git add skills/finishing-a-development-branch/SKILL.md
@@ -199,14 +199,14 @@ payload instead of 4-option menu. Includes commit SHA and data loss warning."
 
 ---
 
-### Task 4: Add Step 5 cleanup guard to `finishing-a-development-branch`
+### Task 4: 为 `finishing-a-development-branch` 新增 Step 5 清理守卫
 
-**Files:**
-- Modify: `skills/finishing-a-development-branch/SKILL.md` (Step 5: Cleanup Worktree — find by section heading, line numbers will have shifted after Task 3)
+**文件：**
+- Modify: `skills/finishing-a-development-branch/SKILL.md`（Step 5: Cleanup Worktree——按小节标题查找，Task 3 之后行号已偏移）
 
-- [ ] **Step 1: Read the current Step 5 section**
+- [ ] **Step 1: 阅读当前 Step 5 小节**
 
-Find the "### Step 5: Cleanup Worktree" section in `skills/finishing-a-development-branch/SKILL.md` (line numbers will have shifted after Task 3's insertion). The current Step 5 is:
+在 `skills/finishing-a-development-branch/SKILL.md` 中找到 `### Step 5: Cleanup Worktree` 小节（Task 3 插入后行号已偏移）。当前 Step 5 为：
 
 ```markdown
 ### Step 5: Cleanup Worktree
@@ -226,9 +226,9 @@ git worktree remove <worktree-path>
 **For Option 3:** Keep worktree.
 ```
 
-- [ ] **Step 2: Add the cleanup guard before existing logic**
+- [ ] **Step 2: 在既有逻辑之前新增清理守卫**
 
-Replace the Step 5 section with:
+将 Step 5 小节替换为：
 
 ```markdown
 ### Step 5: Cleanup Worktree
@@ -257,16 +257,16 @@ git worktree remove <worktree-path>
 **For Option 3:** Keep worktree.
 ```
 
-Note: the original text said "For Options 1, 2, 4" but the Quick Reference table and Common Mistakes section say "Options 1 & 4 only." This edit aligns Step 5 with those sections.
+注：原文写的是 "For Options 1, 2, 4"，但 Quick Reference 表和 Common Mistakes 小节写的是 "Options 1 & 4 only"。本次编辑让 Step 5 与那些小节对齐。
 
-- [ ] **Step 3: Verify the replacement**
+- [ ] **Step 3: 验证替换**
 
-Read Step 5. Confirm:
-- Cleanup guard (re-detection) appears first
-- Existing removal logic preserved for non-externally-managed worktrees
-- "Options 1 and 4" (not "1, 2, 4") matches Quick Reference and Common Mistakes
+阅读 Step 5。确认：
+- 清理守卫（重新检测）出现在最前
+- 为非外部托管的 worktree 保留既有移除逻辑
+- "Options 1 and 4"（不是 "1, 2, 4"）与 Quick Reference 和 Common Mistakes 一致
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: 提交**
 
 ```bash
 git add skills/finishing-a-development-branch/SKILL.md
@@ -279,39 +279,39 @@ Options 1 and 4 only, matching Quick Reference and Common Mistakes."
 
 ---
 
-### Task 5: Update Integration lines in `subagent-driven-development` and `executing-plans`
+### Task 5: 更新 `subagent-driven-development` 和 `executing-plans` 中的 Integration 行
 
-**Files:**
+**文件：**
 - Modify: `skills/subagent-driven-development/SKILL.md:268`
 - Modify: `skills/executing-plans/SKILL.md:68`
 
-- [ ] **Step 1: Update `subagent-driven-development`**
+- [ ] **Step 1: 更新 `subagent-driven-development`**
 
-Change line 268 from:
+将第 268 行从：
 ```
 - **superpowers:using-git-worktrees** - REQUIRED: Set up isolated workspace before starting
 ```
-To:
+改为：
 ```
 - **superpowers:using-git-worktrees** - REQUIRED: Ensures isolated workspace (creates one or verifies existing)
 ```
 
-- [ ] **Step 2: Update `executing-plans`**
+- [ ] **Step 2: 更新 `executing-plans`**
 
-Change line 68 from:
+将第 68 行从：
 ```
 - **superpowers:using-git-worktrees** - REQUIRED: Set up isolated workspace before starting
 ```
-To:
+改为：
 ```
 - **superpowers:using-git-worktrees** - REQUIRED: Ensures isolated workspace (creates one or verifies existing)
 ```
 
-- [ ] **Step 3: Verify both files**
+- [ ] **Step 3: 验证两个文件**
 
-Read line 268 of `skills/subagent-driven-development/SKILL.md` and line 68 of `skills/executing-plans/SKILL.md`. Confirm both say "Ensures isolated workspace (creates one or verifies existing)".
+阅读 `skills/subagent-driven-development/SKILL.md` 第 268 行和 `skills/executing-plans/SKILL.md` 第 68 行。确认两者都写的是 "Ensures isolated workspace (creates one or verifies existing)"。
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: 提交**
 
 ```bash
 git add skills/subagent-driven-development/SKILL.md skills/executing-plans/SKILL.md
@@ -323,18 +323,18 @@ always creating one."
 
 ---
 
-### Task 6: Add environment detection docs to `codex-tools.md`
+### Task 6: 为 `codex-tools.md` 新增环境检测文档
 
-**Files:**
-- Modify: `skills/using-superpowers/references/codex-tools.md:25` (append at end)
+**文件：**
+- Modify: `skills/using-superpowers/references/codex-tools.md:25`（在末尾追加）
 
-- [ ] **Step 1: Read the current file**
+- [ ] **Step 1: 阅读当前文件**
 
-Read `skills/using-superpowers/references/codex-tools.md` in full. Confirm it ends at line 25-26 after the multi_agent section.
+完整阅读 `skills/using-superpowers/references/codex-tools.md`。确认它在 multi_agent 小节之后于第 25-26 行结束。
 
-- [ ] **Step 2: Append two new sections**
+- [ ] **Step 2: 追加两个新小节**
 
-Add at the end of the file:
+在文件末尾新增：
 
 ```markdown
 
@@ -368,14 +368,14 @@ The agent can still run tests, stage files, and output suggested branch
 names, commit messages, and PR descriptions for the user to copy.
 ```
 
-- [ ] **Step 3: Verify the additions**
+- [ ] **Step 3: 验证新增内容**
 
-Read the full file. Confirm:
-- Two new sections appear after the existing content
-- Bash code block renders correctly (not escaped)
-- Cross-references to Step 0 and Step 1.5 are present
+完整阅读文件。确认：
+- 两个新小节出现在既有内容之后
+- Bash 代码块正确渲染（未被转义）
+- 对 Step 0 和 Step 1.5 的交叉引用存在
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: 提交**
 
 ```bash
 git add skills/using-superpowers/references/codex-tools.md
@@ -387,20 +387,20 @@ App's native finishing flow for skills that need to adapt."
 
 ---
 
-### Task 7: Automated test — environment detection
+### Task 7: 自动化测试 — 环境检测
 
-**Files:**
+**文件：**
 - Create: `tests/codex-app-compat/test-environment-detection.sh`
 
-- [ ] **Step 1: Create test directory**
+- [ ] **Step 1: 创建测试目录**
 
 ```bash
 mkdir -p tests/codex-app-compat
 ```
 
-- [ ] **Step 2: Write the detection test script**
+- [ ] **Step 2: 编写检测测试脚本**
 
-Create `tests/codex-app-compat/test-environment-detection.sh`:
+创建 `tests/codex-app-compat/test-environment-detection.sh`：
 
 ```bash
 #!/usr/bin/env bash
@@ -499,16 +499,16 @@ if [ "$FAIL" -gt 0 ]; then
 fi
 ```
 
-- [ ] **Step 3: Make it executable and run it**
+- [ ] **Step 3: 赋予可执行权限并运行**
 
 ```bash
 chmod +x tests/codex-app-compat/test-environment-detection.sh
 ./tests/codex-app-compat/test-environment-detection.sh
 ```
 
-Expected output: 6 passed, 0 failed.
+预期输出：6 passed, 0 failed.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: 提交**
 
 ```bash
 git add tests/codex-app-compat/test-environment-detection.sh
@@ -520,39 +520,39 @@ worktree, detached HEAD, and cleanup guard scenarios."
 
 ---
 
-### Task 8: Final verification
+### Task 8: 最终验证
 
-**Files:**
-- Read: all 5 modified skill files
+**文件：**
+- Read: 所有 5 个被修改的技能文件
 
-- [ ] **Step 1: Run the automated detection tests**
+- [ ] **Step 1: 运行自动化检测测试**
 
 ```bash
 ./tests/codex-app-compat/test-environment-detection.sh
 ```
 
-Expected: 6 passed, 0 failed.
+预期：6 passed, 0 failed.
 
-- [ ] **Step 2: Read each modified file and verify changes**
+- [ ] **Step 2: 阅读每个修改文件并验证改动**
 
-Read each file end-to-end:
-- `skills/using-git-worktrees/SKILL.md` — Step 0 present, rest unchanged
-- `skills/finishing-a-development-branch/SKILL.md` — Step 1.5 present, cleanup guard present, rest unchanged
-- `skills/subagent-driven-development/SKILL.md` — line 268 updated
-- `skills/executing-plans/SKILL.md` — line 68 updated
-- `skills/using-superpowers/references/codex-tools.md` — two new sections at end
+端到端阅读每个文件：
+- `skills/using-git-worktrees/SKILL.md` — Step 0 存在，其余未变
+- `skills/finishing-a-development-branch/SKILL.md` — Step 1.5 存在，清理守卫存在，其余未变
+- `skills/subagent-driven-development/SKILL.md` — 第 268 行已更新
+- `skills/executing-plans/SKILL.md` — 第 68 行已更新
+- `skills/using-superpowers/references/codex-tools.md` — 末尾有两个新小节
 
-- [ ] **Step 3: Verify no unintended changes**
+- [ ] **Step 3: 验证无意外改动**
 
 ```bash
 git diff --stat HEAD~7
 ```
 
-Should show exactly 6 files changed (5 skill files + 1 test file). No other files modified.
+应显示恰好 6 个文件被改动（5 个技能文件 + 1 个测试文件）。无其他文件被修改。
 
-- [ ] **Step 4: Run existing test suite**
+- [ ] **Step 4: 运行既有测试套件**
 
-If test runner exists:
+如果存在测试运行器：
 ```bash
 # Run skill-triggering tests
 # Note: tests/skill-triggering/ was lifted into drill scenarios on 2026-05-06.
@@ -563,4 +563,4 @@ If test runner exists:
 ./tests/claude-code/test-subagent-driven-development-integration.sh 2>/dev/null || echo "SDD integration test not available in this environment"
 ```
 
-Note: these tests require Claude Code with `--dangerously-skip-permissions`. If not available, document that regression tests should be run manually.
+注：这些测试需要带 `--dangerously-skip-permissions` 的 Claude Code。如果不可用，记录回归测试应手动运行。

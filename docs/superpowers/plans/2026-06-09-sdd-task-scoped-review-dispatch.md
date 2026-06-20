@@ -1,27 +1,27 @@
-# SDD Task-Scoped Review Dispatch Implementation Plan
+# SDD 任务级评审分派实现计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **给代理工作者：** 必需的子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 来逐任务地实现本计划。步骤使用复选框（`- [ ]`）语法进行跟踪。
 
-**Goal:** Scope SDD's per-task reviews to the task (diff-first reading, justified broadening, no redundant test runs) while final branch review stays broad.
+**目标：** 将 SDD 的每任务评审限定在任务范围内（以 diff 优先阅读、有理由地扩展、不重复运行测试），同时保持最终分支评审的广度。
 
-**Architecture:** Four prose edits to the subagent-driven-development skill (the per-task quality prompt becomes self-contained instead of delegating to the merge-readiness template; the spec prompt gets a third verdict channel and grounded skepticism; the implementer prompt gains a re-run-after-fix rule; SKILL.md gets controller guidance) plus one new eval scenario in the `evals/` submodule. `skills/requesting-code-review/` is deliberately untouched.
+**架构：** 对 subagent-driven-development 技能做四处散文修改（每任务质量提示词改为自包含，不再委托给 merge-readiness 模板；spec 提示词获得第三个裁定通道和有据可依的质疑；实现者提示词新增修复后重跑规则；SKILL.md 获得控制器指导），并在 `evals/` 子模块中新增一个评估场景。`skills/requesting-code-review/` 故意保持不动。
 
-**Tech Stack:** Markdown skill files; Python setup helper + bash checks + story.md for the quorum eval.
+**技术栈：** Markdown 技能文件；Python setup 辅助脚本 + bash 检查 + story.md 用于 quorum 评估。
 
-**Spec:** `docs/superpowers/specs/2026-06-09-sdd-task-scoped-review-dispatch-design.md` — read it before starting. Decisions already settled there: full re-reviews stay; the two review stages stay separate; coordinator keeps model judgment; `requesting-code-review/` stays broad.
+**规格：** `docs/superpowers/specs/2026-06-09-sdd-task-scoped-review-dispatch-design.md` —— 开始前先阅读。其中已经确定的决策：完整重审保留；两个评审阶段保持分离；协调器保留模型判断；`requesting-code-review/` 保持广度。
 
-**These are behavior-shaping prose files, not code.** There are no unit tests for them. Each task's verification steps are exact `grep` checks that the edit landed; behavioral verification is Task 6 (static) and Task 7 (live evals, maintainer-gated).
+**这些是塑造行为的散文文件，不是代码。** 它们没有单元测试。每个任务的验证步骤是用精确的 `grep` 检查编辑是否落到位；行为验证由 Task 6（静态）和 Task 7（在线评估，由维护者把关）完成。
 
 ---
 
-### Task 1: Rewrite the per-task quality reviewer prompt as self-contained
+### Task 1：将每任务质量评审者提示词重写为自包含
 
-The current file delegates to `../requesting-code-review/code-reviewer.md`, which is a merge-readiness review (architecture, security, production readiness, "Ready to merge?"). Replace the entire file with a self-contained, task-scoped template.
+当前文件委托给 `../requesting-code-review/code-reviewer.md`，那是一份合并就绪评审（架构、安全、生产就绪、"Ready to merge?"）。将整个文件替换为一个自包含的、任务级模板。
 
-**Files:**
-- Rewrite: `skills/subagent-driven-development/code-quality-reviewer-prompt.md`
+**文件：**
+- 重写：`skills/subagent-driven-development/code-quality-reviewer-prompt.md`
 
-- [ ] **Step 1: Replace the full file contents with:**
+- [ ] **Step 1：将整个文件内容替换为：**
 
 ````markdown
 # Code Quality Reviewer Prompt Template
@@ -151,18 +151,18 @@ Subagent (general-purpose):
 **Reviewer returns:** Strengths, Issues (Critical/Important/Minor), Task quality verdict
 ````
 
-- [ ] **Step 2: Verify the rewrite landed**
+- [ ] **Step 2：验证重写已落位**
 
-Run: `grep -c "requesting-code-review" skills/subagent-driven-development/code-quality-reviewer-prompt.md || echo ABSENT`
-Expected: `ABSENT` (no more delegation)
+运行：`grep -c "requesting-code-review" skills/subagent-driven-development/code-quality-reviewer-prompt.md || echo ABSENT`
+预期：`ABSENT`（不再有委托）
 
-Run: `grep -n "Task quality:" skills/subagent-driven-development/code-quality-reviewer-prompt.md | head -2`
-Expected: one match (the Output Format verdict line; the "Reviewer returns" footer says "Task quality verdict" without a colon)
+运行：`grep -n "Task quality:" skills/subagent-driven-development/code-quality-reviewer-prompt.md | head -2`
+预期：一个匹配（Output Format 中的裁定行；"Reviewer returns" 页脚说的是 "Task quality verdict" 没有冒号）
 
-Run: `grep -n "worktree add\|Ready to merge" skills/subagent-driven-development/code-quality-reviewer-prompt.md || echo CLEAN`
-Expected: `CLEAN`
+运行：`grep -n "worktree add\|Ready to merge" skills/subagent-driven-development/code-quality-reviewer-prompt.md || echo CLEAN`
+预期：`CLEAN`
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3：提交**
 
 ```bash
 git add skills/subagent-driven-development/code-quality-reviewer-prompt.md
@@ -171,20 +171,20 @@ git commit -m "Make per-task quality reviewer prompt self-contained and task-sco
 
 ---
 
-### Task 2: Spec reviewer prompt cleanups
+### Task 2：Spec 评审者提示词清理
 
-Four exact edits to `skills/subagent-driven-development/spec-reviewer-prompt.md`. Current line numbers refer to the file as of commit f55642e.
+对 `skills/subagent-driven-development/spec-reviewer-prompt.md` 做四处精确编辑。当前行号对应 commit f55642e 时的文件。
 
-**Files:**
-- Modify: `skills/subagent-driven-development/spec-reviewer-prompt.md`
+**文件：**
+- 修改：`skills/subagent-driven-development/spec-reviewer-prompt.md`
 
-- [ ] **Step 1: Add the judge-from-the-diff clause.** After the line (currently line 31):
+- [ ] **Step 1：添加基于 diff 判定的条款。** 在以下行（当前第 31 行）之后：
 
 ```
     Only read files in this diff. Do not crawl the broader codebase.
 ```
 
-insert a blank line and:
+插入一个空行和：
 
 ```
     Spec compliance is judged by reading the diff against the requirements.
@@ -194,33 +194,33 @@ insert a blank line and:
     instead of broadening your search.
 ```
 
-- [ ] **Step 2: Trim the read-only section.** Replace (currently line 35):
+- [ ] **Step 2：精简只读部分。** 将以下内容（当前第 35 行）：
 
 ```
     Your review is read-only on this checkout. Do not mutate the working tree, the index, HEAD, or branch state in any way. Use tools like `git show`, `git diff`, and `git log` to inspect history. If you need a working copy of a different revision, check it out into a separate temporary directory (e.g. `git worktree add /tmp/review-[SHA] [SHA]`) — never move HEAD on this checkout.
 ```
 
-with:
+替换为：
 
 ```
     Your review is read-only on this checkout. Do not mutate the working tree, the index, HEAD, or branch state in any way. Use tools like `git show`, `git diff`, and `git log` to inspect history.
 ```
 
-- [ ] **Step 3: Ground the skepticism.** Replace (currently lines 39-40):
+- [ ] **Step 3：让质疑有据可依。** 将以下内容（当前第 39-40 行）：
 
 ```
     The implementer finished suspiciously quickly. Their report may be incomplete,
     inaccurate, or optimistic. You MUST verify everything independently.
 ```
 
-with:
+替换为：
 
 ```
     Treat the implementer's report as unverified claims about the code. It may
     be incomplete, inaccurate, or optimistic. Verify the claims against the diff.
 ```
 
-- [ ] **Step 4: Add the third verdict channel.** Replace (currently lines 74-76):
+- [ ] **Step 4：添加第三个裁定通道。** 将以下内容（当前第 74-76 行）：
 
 ```
     Report:
@@ -228,7 +228,7 @@ with:
     - ❌ Issues found: [list specifically what's missing or extra, with file:line references]
 ```
 
-with:
+替换为：
 
 ```
     Report:
@@ -239,15 +239,15 @@ with:
       ✅/❌ verdict for everything you could verify]
 ```
 
-- [ ] **Step 5: Verify**
+- [ ] **Step 5：验证**
 
-Run: `grep -n "suspiciously\|worktree add" skills/subagent-driven-development/spec-reviewer-prompt.md || echo CLEAN`
-Expected: `CLEAN`
+运行：`grep -n "suspiciously\|worktree add" skills/subagent-driven-development/spec-reviewer-prompt.md || echo CLEAN`
+预期：`CLEAN`
 
-Run: `grep -c "⚠️" skills/subagent-driven-development/spec-reviewer-prompt.md`
-Expected: `2` (judge-from-diff clause + verdict channel)
+运行：`grep -c "⚠️" skills/subagent-driven-development/spec-reviewer-prompt.md`
+预期：`2`（基于 diff 判定条款 + 裁定通道）
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6：提交**
 
 ```bash
 git add skills/subagent-driven-development/spec-reviewer-prompt.md
@@ -256,20 +256,20 @@ git commit -m "Spec reviewer: judge from the diff, grounded skepticism, ⚠️ v
 
 ---
 
-### Task 3: Implementer prompt — re-run tests after fixing review findings
+### Task 3：实现者提示词 —— 修复评审发现后重跑测试
 
-The reviewers' "don't re-run the implementer's tests" rule assumes the implementer re-runs tests after every fix. Make that real.
+评审者"不要重跑实现者的测试"规则的前提是：实现者在每次修复后都会重跑测试。让这件事真正落地。
 
-**Files:**
-- Modify: `skills/subagent-driven-development/implementer-prompt.md`
+**文件：**
+- 修改：`skills/subagent-driven-development/implementer-prompt.md`
 
-- [ ] **Step 1: Insert a new section.** Immediately before the line (currently line 100):
+- [ ] **Step 1：插入新章节。** 紧接在以下行（当前第 100 行）之前：
 
 ```
     ## Report Format
 ```
 
-insert:
+插入：
 
 ```
     ## After Review Findings
@@ -280,12 +280,12 @@ insert:
 
 ```
 
-- [ ] **Step 2: Verify**
+- [ ] **Step 2：验证**
 
-Run: `grep -n "After Review Findings" skills/subagent-driven-development/implementer-prompt.md`
-Expected: one match, on a line before `## Report Format`
+运行：`grep -n "After Review Findings" skills/subagent-driven-development/implementer-prompt.md`
+预期：一个匹配，位于 `## Report Format` 之前的某一行
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3：提交**
 
 ```bash
 git add skills/subagent-driven-development/implementer-prompt.md
@@ -294,22 +294,22 @@ git commit -m "Implementer prompt: re-run covering tests after fixing review fin
 
 ---
 
-### Task 4: SKILL.md controller changes
+### Task 4：SKILL.md 控制器修改
 
-Six exact edits to `skills/subagent-driven-development/SKILL.md`. Current line numbers refer to commit f55642e.
+对 `skills/subagent-driven-development/SKILL.md` 做六处精确编辑。当前行号对应 commit f55642e 时的文件。
 
-**Files:**
-- Modify: `skills/subagent-driven-development/SKILL.md`
+**文件：**
+- 修改：`skills/subagent-driven-development/SKILL.md`
 
-- [ ] **Step 1: Point the final-review flowchart node at the broad template.** The node label `Dispatch final code reviewer subagent for entire implementation` appears 3 times (currently lines 65, 84, 85). In all 3 occurrences, replace the label string with:
+- [ ] **Step 1：将最终评审流程图节点指向广度模板。** 节点标签 `Dispatch final code reviewer subagent for entire implementation` 出现 3 次（当前第 65、84、85 行）。在所有 3 处，将标签字符串替换为：
 
 ```
 Dispatch final code reviewer subagent (../requesting-code-review/code-reviewer.md)
 ```
 
-(Graphviz nodes are matched by label text — all three must be byte-identical or the graph grows a phantom node.)
+（Graphviz 节点按标签文本匹配 —— 三处必须字节级一致，否则图会多出一个幽灵节点。）
 
-- [ ] **Step 2: Model selection by judgment.** Replace (currently lines 97-99):
+- [ ] **Step 2：按判断选择模型。** 将以下内容（当前第 97-99 行）：
 
 ```
 **Architecture, design, and review tasks**: use the most capable available model.
@@ -317,7 +317,7 @@ Dispatch final code reviewer subagent (../requesting-code-review/code-reviewer.m
 **Task complexity signals:**
 ```
 
-with:
+替换为：
 
 ```
 **Architecture and design tasks**: use the most capable available model.
@@ -329,13 +329,13 @@ most capable model; a subtle concurrency change does.
 **Task complexity signals (implementation tasks):**
 ```
 
-- [ ] **Step 3: Add controller guidance sections.** Immediately before the line (currently line 122):
+- [ ] **Step 3：添加控制器指导章节。** 紧接在以下行（当前第 122 行）之前：
 
 ```
 ## Prompt Templates
 ```
 
-insert:
+插入：
 
 ```
 ## Handling Spec Reviewer ⚠️ Items
@@ -359,68 +359,68 @@ final whole-branch review. When you fill a reviewer template:
 
 ```
 
-- [ ] **Step 4: Prompt Templates list — add the final-review pointer.** Replace (currently line 126):
+- [ ] **Step 4：Prompt Templates 列表 —— 添加最终评审指引。** 将以下内容（当前第 126 行）：
 
 ```
 - [code-quality-reviewer-prompt.md](code-quality-reviewer-prompt.md) - Dispatch code quality reviewer subagent
 ```
 
-with:
+替换为：
 
 ```
 - [code-quality-reviewer-prompt.md](code-quality-reviewer-prompt.md) - Dispatch code quality reviewer subagent
 - Final whole-branch review: use superpowers:requesting-code-review's [code-reviewer.md](../requesting-code-review/code-reviewer.md)
 ```
 
-- [ ] **Step 5: Example workflow verdict vocabulary.** Two replacements:
+- [ ] **Step 5：示例工作流裁定用词。** 两处替换：
 
-Replace (currently line 157):
+将（当前第 157 行）：
 ```
 Code reviewer: Strengths: Good test coverage, clean. Issues: None. Approved.
 ```
-with:
+替换为：
 ```
 Code reviewer: Strengths: Good test coverage, clean. Issues: None. Task quality: Approved.
 ```
 
-Replace (currently line 191):
+将（当前第 191 行）：
 ```
 Code reviewer: ✅ Approved
 ```
-with:
+替换为：
 ```
 Code reviewer: ✅ Task quality: Approved
 ```
 
-(The final reviewer's "ready to merge" line, currently line 199, stays.)
+（最终评审者的 "ready to merge" 行，当前第 199 行，保持不变。）
 
-- [ ] **Step 6: Integration section.** Replace (currently line 272):
+- [ ] **Step 6：Integration 章节。** 将以下内容（当前第 272 行）：
 
 ```
 - **superpowers:requesting-code-review** - Code review template for reviewer subagents
 ```
 
-with:
+替换为：
 
 ```
 - **superpowers:requesting-code-review** - Code review template for the final whole-branch review
 ```
 
-- [ ] **Step 7: Verify**
+- [ ] **Step 7：验证**
 
-Run: `grep -c "Dispatch final code reviewer subagent (../requesting-code-review/code-reviewer.md)" skills/subagent-driven-development/SKILL.md`
-Expected: `3`
+运行：`grep -c "Dispatch final code reviewer subagent (../requesting-code-review/code-reviewer.md)" skills/subagent-driven-development/SKILL.md`
+预期：`3`
 
-Run: `grep -n "most capable available model" skills/subagent-driven-development/SKILL.md`
-Expected: exactly one match (architecture/design bullet)
+运行：`grep -n "most capable available model" skills/subagent-driven-development/SKILL.md`
+预期：恰好一个匹配（架构/设计那一项）
 
-Run: `grep -n "Handling Spec Reviewer\|Constructing Reviewer Prompts" skills/subagent-driven-development/SKILL.md`
-Expected: two section headers, both before `## Prompt Templates`
+运行：`grep -n "Handling Spec Reviewer\|Constructing Reviewer Prompts" skills/subagent-driven-development/SKILL.md`
+预期：两个章节标题，都位于 `## Prompt Templates` 之前
 
-Run: `grep -c "Task quality: Approved" skills/subagent-driven-development/SKILL.md`
-Expected: `2`
+运行：`grep -c "Task quality: Approved" skills/subagent-driven-development/SKILL.md`
+预期：`2`
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 8：提交**
 
 ```bash
 git add skills/subagent-driven-development/SKILL.md
@@ -429,27 +429,27 @@ git commit -m "SDD controller: reviewer prompt budgets, ⚠️ handling, final-r
 
 ---
 
-### Task 5: New eval scenario — per-task quality reviewer catches a planted defect
+### Task 5：新增评估场景 —— 每任务质量评审者捕获植入的缺陷
 
-Lives in the `evals/` **submodule** (separate repo, `superpowers-evals`). Work on a branch there; the parent submodule-pointer bump happens at finishing time per `evals/CLAUDE.md`.
+位于 `evals/` **子模块**（独立仓库 `superpowers-evals`）。在那里开一个分支工作；父仓库的子模块指针更新在收尾时按 `evals/CLAUDE.md` 进行。
 
-The fixture plan's Task 2 implementation snippet duplicates Task 1's formatting logic verbatim. The duplication is spec-compliant, so the spec reviewer should pass it — the per-task quality reviewer is the gate under test (DRY violation).
+Fixture 计划的 Task 2 实现代码片段逐字复制了 Task 1 的格式化逻辑。这种重复符合规格，所以 spec 评审者应当让它通过 —— 被测试的关卡是每任务质量评审者（DRY 违规）。
 
-**Files:**
-- Create: `evals/setup_helpers/sdd_quality_defect_plan.py`
-- Modify: `evals/setup_helpers/__init__.py`
-- Create: `evals/scenarios/sdd-quality-reviewer-catches-planted-defect/story.md`
-- Create: `evals/scenarios/sdd-quality-reviewer-catches-planted-defect/setup.sh`
-- Create: `evals/scenarios/sdd-quality-reviewer-catches-planted-defect/checks.sh`
+**文件：**
+- 新建：`evals/setup_helpers/sdd_quality_defect_plan.py`
+- 修改：`evals/setup_helpers/__init__.py`
+- 新建：`evals/scenarios/sdd-quality-reviewer-catches-planted-defect/story.md`
+- 新建：`evals/scenarios/sdd-quality-reviewer-catches-planted-defect/setup.sh`
+- 新建：`evals/scenarios/sdd-quality-reviewer-catches-planted-defect/checks.sh`
 
-- [ ] **Step 0: Branch in the submodule**
+- [ ] **Step 0：在子模块中开分支**
 
 ```bash
 cd evals
 git checkout -b sdd-quality-defect-scenario
 ```
 
-- [ ] **Step 1: Create `evals/setup_helpers/sdd_quality_defect_plan.py`:**
+- [ ] **Step 1：创建 `evals/setup_helpers/sdd_quality_defect_plan.py`：**
 
 ````python
 """Setup helper for the sdd-quality-reviewer-catches-planted-defect scenario.
@@ -568,30 +568,29 @@ def scaffold_sdd_quality_defect_plan(workdir: Path) -> None:
     _git(["git", "commit", "-m", "initial: report formatter plan"], cwd=workdir)
 ````
 
-(Note the `\\n` in the JS snippets inside PLAN_BODY: the Python source must
-produce a literal `\n` in the markdown so the JS reads `lines.join("\n")`.)
+（注意 PLAN_BODY 内 JS 代码片段中的 `\\n`：Python 源码必须在 markdown 中产生字面量 `\n`，这样 JS 才会读到 `lines.join("\n")`。）
 
-- [ ] **Step 2: Register the helper.** In `evals/setup_helpers/__init__.py`:
+- [ ] **Step 2：注册该 helper。** 在 `evals/setup_helpers/__init__.py` 中：
 
-After the line:
+在以下行之后：
 ```python
 from setup_helpers.sdd_real_projects import scaffold_sdd_go_fractals, scaffold_sdd_svelte_todo
 ```
-add:
+添加：
 ```python
 from setup_helpers.sdd_quality_defect_plan import scaffold_sdd_quality_defect_plan
 ```
 
-After the registry entry:
+在以下注册条目之后：
 ```python
     "scaffold_sdd_yagni_plan": scaffold_sdd_yagni_plan,
 ```
-add:
+添加：
 ```python
     "scaffold_sdd_quality_defect_plan": scaffold_sdd_quality_defect_plan,
 ```
 
-- [ ] **Step 3: Create `evals/scenarios/sdd-quality-reviewer-catches-planted-defect/story.md`:**
+- [ ] **Step 3：创建 `evals/scenarios/sdd-quality-reviewer-catches-planted-defect/story.md`：**
 
 ```markdown
 ---
@@ -654,7 +653,7 @@ you are done.
   *per-task quality review* was the mechanism that kept the code clean.
 ```
 
-- [ ] **Step 4: Create `evals/scenarios/sdd-quality-reviewer-catches-planted-defect/setup.sh`:**
+- [ ] **Step 4：创建 `evals/scenarios/sdd-quality-reviewer-catches-planted-defect/setup.sh`：**
 
 ```bash
 #!/usr/bin/env bash
@@ -662,9 +661,9 @@ set -euo pipefail
 uv run setup-helpers run scaffold_sdd_quality_defect_plan
 ```
 
-Then: `chmod +x evals/scenarios/sdd-quality-reviewer-catches-planted-defect/setup.sh`
+然后：`chmod +x evals/scenarios/sdd-quality-reviewer-catches-planted-defect/setup.sh`
 
-- [ ] **Step 5: Create `evals/scenarios/sdd-quality-reviewer-catches-planted-defect/checks.sh`** (no executable bit):
+- [ ] **Step 5：创建 `evals/scenarios/sdd-quality-reviewer-catches-planted-defect/checks.sh`**（无需可执行位）：
 
 ```bash
 pre() {
@@ -686,11 +685,9 @@ post() {
 }
 ```
 
-(The last check is the deterministic DRY gate: the banner construction
-`"=".repeat(40)` must appear at most once in the final file — shared, not
-duplicated per function.)
+（最后一条检查是确定性的 DRY 关卡：横幅构造 `"=".repeat(40)` 在最终文件中最多只能出现一次 —— 共享，而不是每个函数各写一份。）
 
-- [ ] **Step 6: Validate and test in the evals repo**
+- [ ] **Step 6：在 evals 仓库中验证和测试**
 
 ```bash
 cd evals
@@ -699,9 +696,9 @@ uv run ruff check
 uv run pytest -x -q
 ```
 
-Expected: all pass; `quorum check` lists the new scenario without errors.
+预期：全部通过；`quorum check` 列出新场景且无错误。
 
-- [ ] **Step 7: Commit (in the submodule)**
+- [ ] **Step 7：提交（在子模块中）**
 
 ```bash
 cd evals
@@ -711,35 +708,35 @@ git commit -m "Add sdd-quality-reviewer-catches-planted-defect scenario"
 
 ---
 
-### Task 6: Static verification sweep
+### Task 6：静态验证扫描
 
-**Files:** none modified — verification only.
+**文件：** 不修改任何文件 —— 仅验证。
 
-- [ ] **Step 1: No dangling references in the parent repo**
+- [ ] **Step 1：父仓库中无悬空引用**
 
-Run: `grep -rn "requesting-code-review" skills/subagent-driven-development/`
-Expected: matches only in SKILL.md (final-review flowchart node ×3, Prompt Templates pointer, Integration bullet). None in code-quality-reviewer-prompt.md.
+运行：`grep -rn "requesting-code-review" skills/subagent-driven-development/`
+预期：匹配仅出现在 SKILL.md 中（最终评审流程图节点 ×3、Prompt Templates 指针、Integration 条目）。code-quality-reviewer-prompt.md 中无匹配。
 
-Run: `grep -rn "Ready to merge" skills/subagent-driven-development/ || echo CLEAN`
-Expected: `CLEAN`
+运行：`grep -rn "Ready to merge" skills/subagent-driven-development/ || echo CLEAN`
+预期：`CLEAN`
 
-- [ ] **Step 2: Plugin infrastructure tests**
+- [ ] **Step 2：插件基础设施测试**
 
-Run: `bash tests/shell-lint/test-lint-shell.sh`
-Expected: all PASS (we added `setup.sh` only inside the evals submodule, which has its own checks).
+运行：`bash tests/shell-lint/test-lint-shell.sh`
+预期：全部 PASS（我们只在 evals 子模块内部新增了 `setup.sh`，那里有自己的检查）。
 
-- [ ] **Step 3: Cross-platform tool tables still coherent**
+- [ ] **Step 3：跨平台工具表仍然自洽**
 
-Run: `grep -n "code-quality-reviewer" skills/using-superpowers/references/antigravity-tools.md skills/using-superpowers/references/gemini-tools.md`
-Expected: both tables still list `code-quality-reviewer` as a reviewer template (the new prompt's "If you cannot run commands in this environment, name the test you would run" line keeps the read-only `research` mapping valid — no table edits needed).
+运行：`grep -n "code-quality-reviewer" skills/using-superpowers/references/antigravity-tools.md skills/using-superpowers/references/gemini-tools.md`
+预期：两个表仍然把 `code-quality-reviewer` 列为评审者模板（新提示词中 "If you cannot run commands in this environment, name the test you would run" 这一行使只读的 `research` 映射依然成立 —— 不需要改表）。
 
 ---
 
-### Task 7: Live before/after evals (maintainer-gated)
+### Task 7：在线前后对比评估（由维护者把关）
 
-Live quorum runs launch agent CLIs in permissive modes — **trusted-maintainer operation; Jesse launches these**, per `evals/CLAUDE.md`. Requires `ANTHROPIC_API_KEY`.
+在线 quorum 运行会以宽松模式启动代理 CLI —— **可信维护者操作；由 Jesse 启动这些运行**，依据 `evals/CLAUDE.md`。需要 `ANTHROPIC_API_KEY`。
 
-- [ ] **Step 1: Baseline (skills as released on dev)** — from the main checkout (`/Users/jesse/git/superpowers/superpowers`, on dev), or any checkout without this branch's changes:
+- [ ] **Step 1：基线（已在 dev 上发布的技能）** —— 从主检出（`/Users/jesse/git/superpowers/superpowers`，在 dev 上），或任何不带本分支改动的检出：
 
 ```bash
 cd evals
@@ -750,7 +747,7 @@ uv run quorum run scenarios/sdd-svelte-todo --coding-agent claude
 uv run quorum run scenarios/spec-reviewer-catches-planted-flaws --coding-agent claude
 ```
 
-- [ ] **Step 2: After (this branch's skills)** — point `SUPERPOWERS_ROOT` at this worktree:
+- [ ] **Step 2：之后（本分支的技能）** —— 将 `SUPERPOWERS_ROOT` 指向本 worktree：
 
 ```bash
 cd evals
@@ -763,12 +760,12 @@ uv run quorum run scenarios/sdd-quality-reviewer-catches-planted-defect --coding
 uv run quorum show
 ```
 
-- [ ] **Step 3: Compare**
+- [ ] **Step 3：对比**
 
-Pass bar: all four pre-existing scenarios still pass after the change (no regression in catch rate); the new planted-defect scenario passes. For exploration cost, compare reviewer-subagent tool-call counts between the before/after run transcripts (no automated check exists — the spec calls this out as a known gap).
+通过门槛：改动后既有的四个场景仍然全部通过（捕获率无回退）；新的植入缺陷场景通过。关于探索成本，对比前后运行 transcript 中评审子代理的工具调用次数（没有自动化检查 —— 规格已将其列为已知缺口）。
 
 ---
 
-## Finishing
+## 收尾
 
-After all tasks pass: the evals submodule commit needs to land in `superpowers-evals` (PR to its `main`), then this branch bumps the `evals` submodule pointer — per `evals/CLAUDE.md`, the parent bump is part of propagation, not optional. Then use superpowers:finishing-a-development-branch. PRs against superpowers target `dev`.
+所有任务通过后：evals 子模块的提交需要先落到 `superpowers-evals`（向其 `main` 开 PR），然后本分支更新 `evals` 子模块指针 —— 依据 `evals/CLAUDE.md`，父仓库的指针更新是 propagation 的一部分，不是可选的。然后使用 superpowers:finishing-a-development-branch。面向 superpowers 的 PR 目标分支是 `dev`。

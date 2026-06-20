@@ -1,160 +1,100 @@
-# SDD Task-Scoped Review Dispatch
+# SDD 任务级评审派发
 
-Make subagent-driven-development's per-task reviews cheaper and faster without weakening them, by scoping per-task review prompts to the task and stopping redundant work — while final branch review stays broad.
+让 subagent-driven-development 的逐任务评审在不削弱评审的前提下更省、更快 —— 通过把逐任务评审提示限定到任务范围、停止冗余工作来实现，同时最终分支评审仍保持广度。
 
-## Problem
+## 问题
 
-Per-task code quality reviewers in SDD routinely do branch-review-scale work on single-task diffs. Evidence from two real local SDD sessions: `a1a6719a-6109-453a-9933-34ae396f5bae` (sen-core-v2) and `0cc1a12d-9984-4c35-8615-9d42dadb2c47` (serf), both under `~/.claude/projects/`:
+SDD 中逐任务的代码质量评审者常常在单个任务 diff 上做分支评审级别的工作。证据来自两次真实本地 SDD 会话：`a1a6719a-6109-453a-9933-34ae396f5bae`（sen-core-v2）和 `0cc1a12d-9984-4c35-8615-9d42dadb2c47`（serf），均在 `~/.claude/projects/` 下：
 
-- In the sen-core-v2 session, 7/8 quality reviewers ran repo-wide greps; the most expensive ran 50+ Bash commands over ~200 seconds. Across both sessions, quality reviewers cost 4-8× what spec reviewers cost on the same tasks.
-- Spec reviewers, whose prompt contains "Only read files in this diff. Do not crawl the broader codebase," stayed tight: 6-16 tool calls, 14-65 seconds.
-- No reviewer ran heavy tests autonomously. Every package-wide or repeated test run observed was explicitly requested by a controller-written prompt ("check all uses," "run tests if useful, especially race-focused ones," "does anything else read `Meta()`?").
+- 在 sen-core-v2 会话中，8 个质量评审者里有 7 个跑了全仓库 grep；开销最大的那个在约 200 秒内跑了 50+ 条 Bash 命令。在两次会话合计中，质量评审者在同样任务上的花费是规格评审者的 4-8 倍。
+- 规格评审者由于提示里包含 "Only read files in this diff. Do not crawl the broader codebase"，保持了紧凑：6-16 次工具调用、14-65 秒。
+- 没有评审者自主跑过重型测试。观察到的每一个包级或重复测试运行，都是由控制器写入的提示明确要求的（"check all uses"、"run tests if useful, especially race-focused ones"、"does anything else read `Meta()`?"）。
 
-Root causes, in order of impact:
+按影响排序的根本原因：
 
-1. **The per-task quality prompt inherits a merge-readiness review.** `code-quality-reviewer-prompt.md` delegates to `requesting-code-review/code-reviewer.md`, which asks about architecture, scalability, security, production readiness, and ends with "Ready to merge?" That frame licenses branch-level breadth on a one-task diff. The spec prompt's diff-scope guard was never carried over.
-2. **The controller gets no guidance on writing reviewer prompts**, so it invents open-ended directives ("check all uses") that reviewers interpret literally.
-3. **Duplicated work across the pipeline.** The quality template's "Plan alignment" dimension re-checks what the spec reviewer just verified. Reviewers re-run test suites the implementer already ran (and reported, with TDD evidence) on identical code.
-4. **Per-task and final review share one template**, so there is no representation of "per-task narrow, final broad" anywhere.
+1. **逐任务质量提示继承了一个合并就绪评审。** `code-quality-reviewer-prompt.md` 委托给 `requesting-code-review/code-reviewer.md`，后者询问架构、可扩展性、安全、生产就绪度，并以 "Ready to merge?" 收尾。那个框架在一个任务 diff 上授权了分支级广度。规格提示里的 diff 范围守则从未被传递过来。
+2. **控制器在编写评审者提示时得不到指导**，于是它自行发明开放式指令（"check all uses"），而评审者会字面照办。
+3. **流水线中的重复工作。** 质量模板的 "Plan alignment" 维度重复核对规格评审者刚刚验证过的内容。评审者重新跑实现者已经跑过（并报告过，附带 TDD 证据）的测试套件，针对的还是同样的代码。
+4. **逐任务评审和最终评审共用一个模板**，因此任何地方都没有 "逐任务窄、最终广" 的表达。
 
-A field report (`~/2026-06-09-code-quality-reviewer-scope-budget-issue.md`) first flagged this. Its cited session and headline numbers could not be verified, but its qualitative diagnosis was confirmed against two real local sessions. One correction to it: cross-cutting audits (lock ordering, changed contracts) are sometimes the *correct* review method — the fix must gate breadth behind a stated concrete risk, not forbid it.
+一份现场报告（`~/2026-06-09-code-quality-reviewer-scope-budget-issue.md`）最早指出这个问题。其引用的会话和头条数字无法核实，但其定性诊断经两次真实本地会话对照确认。需要更正其中一点：横切审计（锁顺序、变更的契约）有时是*正确*的评审方法 —— 修复方案必须把广度置于一个陈述的具体风险之后作为门控，而不是禁止它。
 
-## Goals
+## 目标
 
-- Per-task reviews scoped to the task: diff-first reading, justified broadening, no redundant test runs.
-- Final whole-branch review keeps its current breadth.
-- No reduction in what reviews catch.
+- 逐任务评审限定到任务范围：diff 优先阅读、广度扩张需给出理由、不跑冗余测试。
+- 最终全分支评审保持当前广度。
+- 不减少评审能抓到的问题。
 
-## Non-goals / explicitly preserved
+## 非目标 / 明确保留
 
-- **Full re-reviews stay.** When a reviewer re-reviews after a fix, it still reviews the whole task at full reading breadth. (It does not re-run tests the implementer just ran on the amended code.) This deliberately rejects the field report's "re-review budget" remedy: the cost of its worst cited example (a re-review running `-race` and `-count=100` loops) is curbed by the test budget below, not by narrowing what re-reviewers read.
-- ~~**The two review stages stay separate.** Spec compliance and code quality remain independent subagents, serially gated. No merging.~~ **Superseded by the cost iterations below**: live eval economics showed per-dispatch overhead dominating cost, and the maintainer put everything on the table. The per-task stages are now one task reviewer with two verdicts; the independent broad final review remains.
-- **The coordinator keeps model judgment.** No forced model tier for reviews, in either direction.
-- **`requesting-code-review/` is untouched.** It remains the broad template for final branch review and ad-hoc review.
-- Verdict ordering (spec compliance reported before quality), the fix-and-re-review loops, and the requirement to fix Critical/Important findings are unchanged.
+- **完整复审保留。** 当评审者在一次修复后复审时，它仍以完整阅读广度评审整个任务。（它不会重跑实现者刚刚对修订过代码跑过的测试。）这是有意拒绝现场报告给出的 "复审预算" 疗法：其引用的最差示例（一次复审跑了 `-race` 和 `-count=100` 循环）的开销由下文的测试预算抑制，而不是靠收窄复审者的阅读面。
+- ~~**两个评审阶段保持分离。** 规格合规与代码质量仍是独立的子代理，串行门控。不合并。~~ **被下文成本迭代取代**：实测的 eval 经济性表明每次派发的开销主导了成本，维护者把一切摆上台面。逐任务阶段现在合并为一个带两份裁定的任务评审者；独立的广度最终评审保留。
+- **协调者保留模型判断。** 不在任一方向上强制评审使用某个模型层级。
+- **`requesting-code-review/` 不动。** 它仍是用于最终分支评审和临时评审的广度模板。
+- 裁定顺序（规格合规先于质量报告）、修复并复审的循环、对 Critical/Important 发现必须修复的要求 —— 均不变。
 
-## Cost iterations (post-launch eval economics)
+## 成本迭代（上线后的 eval 经济性）
 
-Live before/after runs surfaced a cost regression once the quality-hardening
-prose (evidence rule, constraint carrying, pristine output) landed: go-fractals
-went from 42.8 min / 14.5M tokens (first task-scoped version) to 69.9 min /
-32.2M (hardened version) while reaching baseline-parity quality (blind-judged
-8.5 vs 8.5). Per-subagent turn profiling attributed cost to, in order: cheap
-models taking 2-3× the turns on multi-step work (678 of 1197 subagent turns
-were haiku), per-dispatch overhead (3 subagent spin-ups per task, each
-re-deriving the diff; controller coordination was half the dollars), and
-evidence-rule narration.
+上线前后的实测运行在质量加固散文（证据规则、约束携带、纯净输出）落地后暴露了一次成本回归：go-fractals 从 42.8 分钟 / 14.5M token（首个任务级版本）变为 69.9 分钟 / 32.2M（加固版本），而质量达到基线持平（盲评 8.5 vs 8.5）。按子代理 turn 的性能分析把成本归因于，按顺序：廉价模型在多步工作上花费 2-3 倍的 turn（1197 个子代理 turn 里有 678 个是 haiku）、每次派发的开销（每个任务 3 次子代理启动，每次重新推导 diff；控制器协调占了花费的一半）、以及证据规则的口述开销。
 
-- **Iteration 1:** turn-count-beats-token-price model guidance (mid-tier floor
-  for multi-step work), optional inline diffs, cite-don't-narrate evidence,
-  Important = cannot-trust-until-fixed, fixes dispatched only for
-  Critical/Important. Result: 68.2 min / 22.9M — tokens down 29%, wall-clock
-  flat; controllers pasted the diff in only 2 of 22 review dispatches when
-  phrasing was optional.
-- **Iteration 2:** per-task spec and quality reviews merged into one
-  `task-reviewer-prompt.md` (one reviewer, one reading of the diff, two
-  verdicts; one fix dispatch addresses both kinds of findings); implementers
-  run the focused test while iterating, full suite once before commit.
-  Result (go-fractals): 47.5 min / 15.7M / $13.55 — beat baseline on every
-  axis, blind-judged 9/10 vs baseline 7/10.
-- **Iteration 3:** Calibration names merge-blocking maintainability damage
-  (verbatim duplication, swallowed errors, assertion-free tests) as
-  Important and Minor findings must be pasted into the final review for
-  triage; reviewer skepticism extended to the implementer's design
-  rationales ("left it per YAGNI" is a claim, not a verdict); diff handed
-  to reviewers as a file (`git diff > /tmp/sdd-task-N.diff`, redirected so
-  it never enters the controller's context; one Read call for the
-  reviewer) after paste-into-prompt guidance went unadopted (0-6 of 11-17
-  dispatches) for locally-rational context-economics reasons.
-- **Final frozen config (e355795), all five scenarios pass:** go-fractals
-  44.4 min / 13.4M / $11.67 (-32% time, -37% tokens, -27% dollars vs
-  baseline); svelte-todo 62.8 / 19.7M / $15.76 (-21% / -28% / -25%);
-  rejects-extra-features $1.31 (vs $1.88); spec-reviewer-flaws flat; the
-  planted-defect scenario (v3: open-flag transparency bar for judgment
-  calls, must-fix bar for a test whose name promises verification it
-  never performs) passes with the defect caught and fixed.
+- **迭代 1：** "turn 数胜过 token 单价" 的模型指导（多步工作设中端下限）、可选的内联 diff、cite-don't-narrate 证据、Important = 不能信任直到修复、只为 Critical/Important 派发修复。结果：68.2 分钟 / 22.9M — token 下降 29%，墙钟时间持平；当措辞设为可选时，控制器只在 22 次评审派发中的 2 次里粘贴了 diff。
+- **迭代 2：** 逐任务的规格与质量评审合并为一个 `task-reviewer-prompt.md`（一个评审者、一次对 diff 的阅读、两份裁定；一次修复派发同时处理两类发现）；实现者在迭代时跑聚焦测试，提交前跑一次完整套件。结果（go-fractals）：47.5 分钟 / 15.7M / $13.55 — 在每个维度上都击败基线，盲评 9/10 vs 基线 7/10。
+- **迭代 3：** 校准把阻断合并的可维护性损害（逐字重复、吞掉错误、无断言的测试）定为 Important，Minor 发现必须粘贴进最终评审做分诊；评审者的怀疑延伸到实现者的设计理由（"left it per YAGNI" 是一个说法，不是裁定）；diff 作为文件交给评审者（`git diff > /tmp/sdd-task-N.diff`，重定向使其从不进入控制器的上下文；评审者一次 Read 调用）—— 这是在 "粘贴进提示" 的指导未被采纳（11-17 次派发里只有 0-6 次）之后采取的，出于本地合理的上下文经济性原因。
+- **最终冻结配置（e355795），全部五个场景通过：** go-fractals 44.4 分钟 / 13.4M / $11.67（较基线时间 -32%、token -37%、美元 -27%）；svelte-todo 62.8 / 19.7M / $15.76（-21% / -28% / -25%）；rejects-extra-features $1.31（vs $1.88）；spec-reviewer-flaws 持平；planted-defect 场景（v3：对判断类调用采用 open-flag 透明度门槛，对某个其名称承诺要做却从未执行的测试采用 must-fix 门槛）通过，缺陷被发现并修复。
 
-### Iterations 4-5 (2026-06-10): variance honesty, structural fixes, positive recipes
+### 迭代 4-5（2026-06-10）：方差诚实、结构性修复、正向配方
 
-A same-config re-run exposed run-to-run variance (44.4→57.1 min on
-identical prompts; reviewer escape-hatch appetite swung 1.0→6.3 tool
-calls/review), so all subsequent claims use ranges. Five parallel
-experiment variants on go-fractals plus transcript mining of real local
-sessions (full log with negative results:
-`evals/docs/experiments/2026-06-10-sdd-cost-experiments.md`) produced the
-final config:
+一次同配置复跑暴露了 run-to-run 方差（相同提示下 44.4→57.1 分钟；评审者逃生路径的胃口在 1.0→6.3 次工具调用/评审之间摆动），因此后续所有结论都用区间表示。在 go-fractals 上的五个并行实验变体，加上对真实本地会话的逐字挖掘（含负面结果的完整日志：`evals/docs/experiments/2026-06-10-sdd-cost-experiments.md`），产出了最终配置：
 
-- **Adopted:** final-review package (final reviewer 33→6 turns at
-  controller-model prices); REQUIRED `model:` line in both templates
-  (prose guidance decayed mid-session once, inheriting opus for 17
-  dispatches, +$5); task-brief + report files (`scripts/task-brief`;
-  fidelity anchor, modest context savings); progress ledger in
-  `<git-dir>/sdd/progress.md` (real sessions re-dispatched entire
-  completed task sequences after compaction — 269 dispatches for ~22
-  tasks); omnibus final fixer (a real session's per-finding fix wave cost
-  more than all its tasks); scoped fix tests; unique SHA-range collateral
-  names (worktree/submodule-safe); dispatch-composition recipe and
-  reviewer named-risk budget (micro-tested: positive recipe 3.0
-  transcribed values vs prohibition 4.4 vs control 3.6 — prohibitions can
-  backfire; see `2026-06-10-positive-instruction-redesign-design.md`).
-- **Tested and declined:** controller turn batching and parallel-call
-  pipelining (controller emits exactly one tool call per message — 0
-  multi-tool messages in every run; 46% of its turns are
-  thinking/narration, a prompt-immune floor); background-dispatch
-  pipelining (mechanism adopted 7/28 but benefit below the ±6 min noise
-  floor on these scenarios).
-- **Final validated config (b81f35b family), all gates pass:** go-fractals
-  54.1-54.7 min / 14.4-16.6M / $12.81-14.31 (baseline 64.9 / 21.2M /
-  $16.07); svelte-todo 55.0 min / 19.3M / $14.99 (baseline 79.7 / 27.3M /
-  $20.98); planted-defect pass / $2.77. Across all 8 same-design fractals
-  runs: 44.4-57.1 min / 13.4-20.0M / $11.67-14.84 — the worst draw beats
-  baseline on every axis; typical mid-band savings ~20-25%.
+- **采纳：** 最终评审包（最终评审者 33→6 turn，按控制器模型价格计费）；两个模板都加入 REQUIRED `model:` 行（散文指导曾在一个会话中途退化一次，继承了 opus 达 17 次派发，+$5）；task-brief + report 文件（`scripts/task-brief`；保真度锚点、温和的上下文节省）；进度台账置于 `<git-dir>/sdd/progress.md`（真实会话曾在压缩后重新派发整段已完成任务序列 —— 约 22 个任务却跑了 269 次派发）；综合最终修复者（一个真实会话里按发现逐条修复的浪潮花费超过它全部任务之和）；限定范围的修复测试；用唯一 SHA 区间命名的旁路制品（对 worktree/submodule 安全）；派发组合配方与评审者具名风险预算（经微测：正向配方转写值 3.0 vs 禁令 4.4 vs 对照 3.6 — 禁令可能适得其反；见 `2026-06-10-positive-instruction-redesign-design.md`）。
+- **测试后放弃：** 控制器 turn 批处理与并行调用流水线（控制器每条消息恰好发出一个工具调用 — 每次运行中 0 条多工具消息；其 turn 的 46% 是 thinking/narration，这是提示免疫的基线）；后台派发流水线（机制在 7/28 被采纳，但在这些场景上的收益低于 ±6 分钟的噪声基线）。
+- **最终验证配置（b81f35b 家族），所有关卡通过：** go-fractals 54.1-54.7 分钟 / 14.4-16.6M / $12.81-14.31（基线 64.9 / 21.2M / $16.07）；svelte-todo 55.0 分钟 / 19.3M / $14.99（基线 79.7 / 27.3M / $20.98）；planted-defect 通过 / $2.77。在全部 8 次同设计 fractals 运行中：44.4-57.1 分钟 / 13.4-20.0M / $11.67-14.84 — 最差一次仍在每个维度上击败基线；典型中段节省约 20-25%。
 
-## Design
+## 设计
 
-### Shared principle: don't re-run tests on code that hasn't changed
+### 共享原则：不要在没改动的代码上重跑测试
 
-The implementer's report includes test results and TDD RED/GREEN evidence for exactly the code under review. Reviewers verify by reading. A reviewer runs a test only when reading raises a specific doubt that no existing run answers — and then a focused test, not a suite. On harnesses where reviewer subagents are read-only (e.g., Antigravity maps reviewer templates to the `research` type, which has no command access), the reviewer instead names the test it would run in its report.
+实现者的报告包含被评审代码对应的测试结果与 TDD RED/GREEN 证据。评审者通过阅读来验证。评审者只有在阅读引发某个具体怀疑、且没有任何既有运行能解答时才跑测试 —— 而且跑的是聚焦测试，不是套件。在评审者子代理为只读的宿主上（例如 Antigravity 把评审者模板映射到 `research` 类型，该类型没有命令访问权），评审者改为在其报告中点名它会跑的那个测试。
 
-After a fix, the implementer re-runs the tests covering the amended code; the re-reviewer does not repeat that run. Today nothing enforces that premise: `implementer-prompt.md` describes the initial implement-test-commit flow only, with no fix-iteration instruction. This spec therefore also adds to `implementer-prompt.md`: after fixing a review finding, re-run the tests that cover the amended code and include the results in the fix report.
+修复之后，实现者重新跑覆盖修订代码的测试；复审者不重复那次运行。目前没有任何机制强制这一前提：`implementer-prompt.md` 只描述了初始的 implement-test-commit 流程，没有修复迭代的指引。因此本规格还在 `implementer-prompt.md` 中补充：修复一个评审发现后，重新跑覆盖修订代码的测试，并把结果纳入修复报告。
 
-This principle appears in both reviewer prompts, the implementer prompt, and the controller guidance.
+这一原则出现在两个评审者提示、实现者提示以及控制器指导中。
 
-### 1. New file: `skills/subagent-driven-development/code-quality-reviewer-prompt.md` becomes self-contained
+### 1. 新文件：`skills/subagent-driven-development/code-quality-reviewer-prompt.md` 变为自包含
 
-Stop delegating to `requesting-code-review/code-reviewer.md`. The per-task quality reviewer gets its own scoped prompt template:
+停止向 `requesting-code-review/code-reviewer.md` 委托。逐任务质量评审者获得自己的限定范围提示模板：
 
-- **Framing:** "You are reviewing one task's implementation for code quality." A task-scoped gate, not a merge review.
-- **Spec compliance is settled:** spec review already passed; do not re-litigate requirements or plan alignment.
-- **Review dimensions kept:** code quality (clarity, duplication, error handling), test quality (real behavior, not mocks), maintainability, and the existing SDD-specific checks (single responsibility, independent testability, file structure from plan, file growth contributed by this change). Dropped: plan alignment, security/scalability/production-readiness dimensions, merge verdict.
-- **Scope budget:** start from `git diff BASE..HEAD`; read changed files first; inspect adjacent code only to evaluate a concrete risk you can name. Cross-cutting changes — lock ordering, changed function/API contracts, shared mutable state — are legitimate named risks that justify checking call sites. Do not crawl the codebase by default.
-- **Test budget:** the shared principle above, plus: no package-wide suites, race detectors, or repeated/high-count runs unless you have first named a specific suspected flake or race. Otherwise, recommend heavy validation in the report instead of running it. Warnings or noise in the implementer's reported test output are findings — output should be pristine (the implementer's self-review checks this too).
-- **Evidence rule:** reviewers answer each What-to-Check item with file:line evidence, not bare yes/no. (Added after live eval runs showed reviewers passing defects the prompt had pointed them at — an accessible-name check and a temp-dir-cleanup check both got unsupported "yes" answers while the defect sat in the reviewed diff.)
-- **Read-only rule** kept in trimmed form: no mutating the working tree, index, HEAD, or branch state. The `git worktree add` how-to sentence from the current templates is NOT carried into this file — a diff-scoped review never needs a checkout of another revision (same rationale as the spec-prompt cleanup below).
-- **Verdict:** Strengths / Issues (Critical/Important/Minor) / "Task quality: Approved | Needs fixes."
+- **框架：** "You are reviewing one task's implementation for code quality." 一个任务级门控，不是合并评审。
+- **规格合规已定案：** 规格评审已通过；不要重新争论需求或计划对齐。
+- **保留的评审维度：** 代码质量（清晰度、重复、错误处理）、测试质量（真实行为，而非 mock）、可维护性，以及既有的 SDD 专属检查（单一职责、独立可测性、来自计划的文件结构、本次改动贡献的文件增长）。删除：计划对齐、安全/可扩展性/生产就绪度维度、合并裁定。
+- **范围预算：** 从 `git diff BASE..HEAD` 出发；先读改动文件；只有为了评估一个你能具名的具体风险时才检查相邻代码。横切改动 — 锁顺序、变更的函数/API 契约、共享可变状态 — 是合理的具名风险，足以论证检查调用点的必要性。默认不要爬整个代码库。
+- **测试预算：** 上文的共享原则，外加：不跑包级套件、竞态检测器或重复/高次数运行，除非你先点名一个具体怀疑的 flake 或竞态。否则应在报告中建议重型验证，而不是运行它。实现者报告的测试输出中的告警或噪声属于发现 — 输出应纯净（实现者的自评审也会检查这点）。
+- **证据规则：** 评审者对每个 What-to-Check 条目以 file:line 证据作答，而非裸的 yes/no。（在实测 eval 运行显示评审者放过提示已点名的缺陷后加入 — 一个可访问名称检查和一个临时目录清理检查都得到了无支撑的 "yes"，而缺陷就坐在被评审的 diff 里。）
+- **只读规则** 保留精简形式：不得改动工作树、index、HEAD 或分支状态。当前模板中那句 `git worktree add` 的操作说明不带入本文件 — 一个 diff 范围的评审永远不需要检出另一个版本（理由同下文规格提示的清理）。
+- **裁定：** Strengths / Issues (Critical/Important/Minor) / "Task quality: Approved | Needs fixes."
 
-### 2. `skills/subagent-driven-development/spec-reviewer-prompt.md` cleanups
+### 2. `skills/subagent-driven-development/spec-reviewer-prompt.md` 清理
 
-- Remove the `git worktree add` how-to sentence. The read-only rule stays; a diff-scoped spec review never needs a checkout of another revision.
-- Resolve the tension between the diff-only guard and "verify everything independently": spec compliance is judged by reading the diff against the requirements. The implementer's TDD evidence covers "it runs" — apply the shared test principle.
-- New third verdict channel: requirements that cannot be verified from the diff (live in unchanged code, span tasks) are reported as explicit "⚠️ Cannot verify from diff — controller should check X" items, instead of either crawling or silently passing. The flowchart's binary pass/fail diamond cannot route this, so the controller guidance (§3) defines the handling: ⚠️ items do not block dispatching the quality reviewer, but the controller must resolve each one itself (it holds the plan and cross-task context) before marking the task complete; an item the controller confirms is a real gap is treated as a failed spec review and goes back to the implementer.
-- Replace the fabricated premise "The implementer finished suspiciously quickly" with grounded skepticism: treat the implementer's report as unverified claims about the code. Same distrust, no invented fact.
+- 移除那句 `git worktree add` 的操作说明。只读规则保留；一个 diff 范围的规格评审永远不需要检出另一个版本。
+- 化解 "只看 diff" 守则与 "独立核实一切" 之间的张力：规格合规通过把 diff 对照需求阅读来判定。实现者的 TDD 证据覆盖 "它能跑" — 套用共享的测试原则。
+- 新增第三条裁定通道：无法从 diff 核实的需求（存在于未改动代码中、跨任务）以显式的 "⚠️ Cannot verify from diff — controller should check X" 条目报告，而不是要么爬代码库、要么默默放行。流程图那个二元通过/失败菱形无法路由这种情况，因此控制器指导（§3）定义了处理方式：⚠️ 条目不阻塞派发质量评审者，但控制器必须在标记任务完成前自行解决每一项（它持有计划和跨任务上下文）；控制器确认是真实缺口的一项被视为规格评审失败，回到实现者。
+- 用有依据的怀疑替换掉那个编造的前提 "The implementer finished suspiciously quickly"：把实现者的报告视为关于代码的未经验证的说法。同样的不信任，但不再捏造事实。
 
-### 3. `skills/subagent-driven-development/SKILL.md` controller changes
+### 3. `skills/subagent-driven-development/SKILL.md` 控制器改动
 
-- **Model Selection:** replace "Architecture, design, and review tasks: use the most capable available model" with judgment guidance — pick reviewer models the way implementer models are picked, scaled to the diff's size, complexity, and risk. The "Task complexity signals" list is rescoped to make clear its bullets describe implementation tasks; reviewer model choice follows the same judgment, so a narrow diff review does not automatically map to "broad codebase understanding → most capable model."
-- **Reviewer prompt construction** (new guidance near Red Flags): when dispatching reviewers, do not write open-ended directives ("check all uses," "run race tests if useful") without a concrete task-specific reason; do not ask reviewers to re-run tests the implementer already ran on the same code; do not pre-judge findings for the reviewer (never instruct a reviewer to ignore or not flag a specific issue — adjudicate suspected false positives in the review loop instead); per-task reviews are task-scoped gates — the broad review happens once, at the final whole-branch review. (The pre-judging rule was added after a live eval run caught the controller fabricating a "the plan forbids a shared helper" claim and instructing the quality reviewer not to flag a planted DRY violation.) Controllers must also include the spec/design's global constraints that bind the task — version floors, naming and copy rules, platform requirements — in the requirements they paste: a live run shipped a `go 1.26.1` module floor against a "Go 1.21+" design because no reviewer ever saw the constraint. And controllers must specify a model explicitly on every dispatch — an omitted model inherits the session's (usually most expensive) model, which silently defeats model selection.
-- **Handling spec-reviewer ⚠️ items** (new guidance, alongside Handling Implementer Status): the controller resolves each "cannot verify from diff" item itself before marking the task complete; confirmed gaps go back to the implementer as failed spec review.
-- **Final review stays broad, explicitly:** the final whole-branch reviewer dispatch node gains an explicit pointer to `../requesting-code-review/code-reviewer.md`. (Today that template is reachable only through the per-task quality prompt's delegation; once that delegation is removed, an unreferenced final-review template would be orphaned.) The Integration section's note that `superpowers:requesting-code-review` provides "the code review template for reviewer subagents" is corrected to apply to the final review only.
-- **Example workflow:** the quality-reviewer lines in the example are updated to the new verdict vocabulary ("Task quality: Approved"); the final reviewer's "ready to merge" line stays.
-- Flowchart topology is unchanged; the ⚠️ channel is handled by controller guidance, not a new graph branch.
+- **模型选择：** 用判断性指导替换 "Architecture, design, and review tasks: use the most capable available model" — 像挑选实现者模型那样挑选评审者模型，按 diff 的规模、复杂度和风险进行缩放。"Task complexity signals" 列表重新定范围，明确其条目描述的是实现任务；评审者模型选择遵循同一判断，因此一个窄 diff 的评审不会自动映射到 "需要广代码库理解 → 最强模型"。
+- **评审者提示构造**（Red Flags 附近新增指导）：派发评审者时，若无具体针对该任务的理由，不要写开放式指令（"check all uses"、"run race tests if useful"）；不要要求评审者重跑实现者已在相同代码上跑过的测试；不要替评审者预先判定发现（绝不要指示某个评审者忽略或不标记某个具体问题 —— 对疑似假阳性的裁定放在评审循环里处理）；逐任务评审是任务级门控 — 广度评审只在最终全分支评审时发生一次。（这条 "禁止预先判定" 规则是在一次实测 eval 运行中发现控制器捏造 "the plan forbids a shared helper" 的说法并指示质量评审者不要标记一个植入的 DRY 违规后加入的。）控制器还必须把约束本任务的规格/设计全局约束 — 版本下限、命名与文案规则、平台要求 — 粘贴进它们粘贴的需求里：一次实际运行发布了一个 `go 1.26.1` 模块下限，违反了 "Go 1.21+" 的设计，因为没有任何评审者看到过该约束。此外控制器必须在每次派发时显式指定模型 — 省略 model 会继承会话（通常是最贵的）模型，这会无声地使模型选择失效。
+- **处理规格评审者 ⚠️ 条目**（新增指导，与 Handling Implementer Status 并列）：控制器在标记任务完成前自行解决每个 "cannot verify from diff" 条目；确认的缺口作为规格评审失败回到实现者。
+- **最终评审保持广度，明确化：** 最终全分支评审者的派发节点增加一个显式指针指向 `../requesting-code-review/code-reviewer.md`。（当前该模板只能通过逐任务质量提示的委托到达；一旦该委托被移除，未被引用的最终评审模板就会成为孤儿。）Integration 章节关于 `superpowers:requesting-code-review` 提供 "the code review template for reviewer subagents" 的注记被更正为仅适用于最终评审。
+- **示例工作流：** 示例中的质量评审者相关行更新为新裁定词汇（"Task quality: Approved"）；最终评审者的 "ready to merge" 行保留。
+- 流程图拓扑不变；⚠️ 通道由控制器指导处理，而不是新增一条图分支。
 
-## What this does not fix (known, deferred)
+## 本设计不修复的内容（已知、推迟）
 
-The spec reviewer judges against task text the controller pasted; it cannot catch requirements dropped during the controller's extraction from the plan. That is an architectural property of "controller provides full text," not a prompt problem, and is out of scope here.
+规格评审者对照控制器粘贴的任务文本做判断；它无法抓到控制器从计划中抽取时丢掉的需求。这是 "控制器提供完整文本" 的架构属性，不是提示问题，超出本范围。
 
-## Verification
+## 验证
 
-- Plugin infrastructure tests (`tests/`) still pass.
-- Run the SDD skill-behavior evals (`git submodule update --init evals`, then per `evals/README.md`) before and after the change. Specifically: `sdd-go-fractals`, `sdd-svelte-todo`, `sdd-rejects-extra-features` (end-to-end SDD including the spec reviewer's YAGNI gate), and `spec-reviewer-catches-planted-flaws`.
-- Known eval gaps this change exposes: no existing scenario plants a code-quality defect inside a single SDD task and asserts the per-task quality reviewer catches it, and no scenario measures per-reviewer exploration cost (tool-call/grep counts). Add one scenario covering the first gap (planted single-task quality defect → per-task reviewer must flag it before final review). For exploration cost, compare reviewer subagent tool-call counts manually across the before/after eval transcripts.
+- 插件基础设施测试（`tests/`）仍然通过。
+- 在改动前后运行 SDD 技能行为 eval（`git submodule update --init evals`，然后按 `evals/README.md` 执行）。具体是：`sdd-go-fractals`、`sdd-svelte-todo`、`sdd-rejects-extra-features`（端到端 SDD，含规格评审者的 YAGNI 门控），以及 `spec-reviewer-catches-planted-flaws`。
+- 本改动暴露的已知 eval 缺口：现有场景没有在一个 SDD 任务内部植入代码质量缺陷并断言逐任务质量评审者抓到它，也没有场景度量每个评审者的探索开销（工具调用/grep 计数）。新增一个覆盖前一个缺口的场景（植入单任务质量缺陷 → 逐任务评审者必须在最终评审前标记它）。对于探索开销，手动跨改动前后 eval 逐字记录比较评审者子代理的工具调用计数。

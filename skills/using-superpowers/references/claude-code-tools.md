@@ -1,50 +1,50 @@
-# Claude Code Tool Mapping
+# Claude Code 工具映射
 
-Skills speak in actions ("dispatch a subagent", "create a todo", "read a file"). On Claude Code these resolve to the tools below.
+技能用动作说话（"分派一个子代理"、"创建一个待办"、"读一个文件"）。在 Claude Code 上，这些解析为下面的工具。
 
-## Tools
+## 工具
 
-| Action skills request | Claude Code tool |
+| 技能请求的动作 | Claude Code 工具 |
 |----------------------|------------------|
-| Read a file | `Read` |
-| Create a new file | `Write` |
-| Edit a file | `Edit` |
-| Run a shell command | `Bash` |
-| Search file contents | `Grep` |
-| Find files by name | `Glob` |
-| Fetch a URL | `WebFetch` |
-| Search the web | `WebSearch` |
-| Invoke a skill | `Skill` |
-| Dispatch a subagent (`Subagent (general-purpose):` template) | `Agent` (older releases named this `Task`) |
-| Multiple parallel dispatches | Multiple `Agent` calls in one response |
-| Task tracking ("create a todo", "mark complete") | `TaskCreate`, `TaskUpdate`, `TaskList`, `TaskGet`; `TodoWrite` in `claude -p` / Agent SDK unless `CLAUDE_CODE_ENABLE_TASKS=1` is set |
-| Background-process / subagent lifecycle (read output, cancel) | `TaskOutput`, `TaskStop` — these are distinct from the todo tools above and apply to running shells, agents, and remote sessions |
+| 读文件 | `Read` |
+| 创建新文件 | `Write` |
+| 编辑文件 | `Edit` |
+| 运行 shell 命令 | `Bash` |
+| 搜索文件内容 | `Grep` |
+| 按名查找文件 | `Glob` |
+| 抓取 URL | `WebFetch` |
+| 搜索网络 | `WebSearch` |
+| 调用技能 | `Skill` |
+| 分派子代理（`Subagent (general-purpose):` 模板） | `Agent`（较旧版本名为 `Task`） |
+| 多个并行分派 | 在一个响应里多个 `Agent` 调用 |
+| 任务跟踪（"创建待办"、"标记完成"） | `TaskCreate`、`TaskUpdate`、`TaskList`、`TaskGet`；在 `claude -p` / Agent SDK 中用 `TodoWrite`，除非设置了 `CLAUDE_CODE_ENABLE_TASKS=1` |
+| 后台进程 / 子代理生命周期（读输出、取消） | `TaskOutput`、`TaskStop` —— 这些与上面的待办工具不同，适用于运行中的 shell、代理和远程会话 |
 
-## Instructions file
+## 指令文件
 
-When a skill mentions "your instructions file", on Claude Code this is **`CLAUDE.md`**. Claude Code walks up the directory tree from the current working directory and concatenates every `CLAUDE.md` and `CLAUDE.local.md` it finds along the way. Standard locations:
+当技能提到"你的指令文件"时，在 Claude Code 上这是 **`CLAUDE.md`**。Claude Code 从当前工作目录向上遍历目录树，拼接它沿途找到的每一个 `CLAUDE.md` 和 `CLAUDE.local.md`。标准位置：
 
-| Scope | Location |
+| 范围 | 位置 |
 |-------|----------|
-| Project (team-shared) | `./CLAUDE.md` or `./.claude/CLAUDE.md` |
-| User global | `~/.claude/CLAUDE.md` |
-| Local-private (gitignored) | `./CLAUDE.local.md` |
-| Managed policy (org-wide) | `/Library/Application Support/ClaudeCode/CLAUDE.md` (macOS), `/etc/claude-code/CLAUDE.md` (Linux/WSL), `C:\Program Files\ClaudeCode\CLAUDE.md` (Windows) |
+| 项目（团队共享） | `./CLAUDE.md` 或 `./.claude/CLAUDE.md` |
+| 用户全局 | `~/.claude/CLAUDE.md` |
+| 本地私有（gitignored） | `./CLAUDE.local.md` |
+| 托管策略（组织范围） | `/Library/Application Support/ClaudeCode/CLAUDE.md`（macOS）、`/etc/claude-code/CLAUDE.md`（Linux/WSL）、`C:\Program Files\ClaudeCode\CLAUDE.md`（Windows） |
 
-CLAUDE.md files can pull in additional content with `@path/to/file` imports (relative or absolute, max five hops deep). Subdirectory `CLAUDE.md` files are also discovered automatically and loaded on-demand when Claude Code reads files in those subdirectories.
+CLAUDE.md 文件可以用 `@path/to/file` 导入拉入额外内容（相对或绝对，最多五跳深）。子目录的 `CLAUDE.md` 文件也会被自动发现，并在 Claude Code 读取那些子目录中的文件时按需加载。
 
-Claude Code does **not** read `AGENTS.md` directly. If a project already maintains `AGENTS.md` for other agents, import it from `CLAUDE.md` so both runtimes share the same instructions:
+Claude Code **不**直接读 `AGENTS.md`。如果一个项目已经为其他代理维护了 `AGENTS.md`，从 `CLAUDE.md` 导入它，这样两个运行时共享同一套指令：
 
 ```markdown
 @AGENTS.md
 
 ## Claude Code
 
-(Claude-Code-specific instructions go here.)
+（Claude Code 特定的指令放在这里。）
 ```
 
-For path-scoped rules and larger-project organization, see `.claude/rules/` (rules can be scoped to specific files via `paths` frontmatter and load on demand).
+关于路径范围规则和大型项目组织，见 `.claude/rules/`（规则可通过 `paths` frontmatter 限定到特定文件并按需加载）。
 
-## Personal skills directory
+## 个人技能目录
 
-User-level skills live at **`~/.claude/skills/`**. Each skill is a subdirectory containing a `SKILL.md` (with `name` and `description` frontmatter) plus any supporting files. Claude Code does not currently recognize the cross-runtime `~/.agents/skills/` path that Codex, Copilot CLI, and Gemini CLI read; if you're relying on cross-runtime support in the future, verify against the [official skills docs](https://code.claude.com/docs/en/skills).
+用户级技能位于 **`~/.claude/skills/`**。每个技能是一个子目录，包含一个 `SKILL.md`（带 `name` 和 `description` frontmatter）加任何支持文件。Claude Code 目前不识别 Codex、Copilot CLI 和 Gemini CLI 读取的跨运行时路径 `~/.agents/skills/`；如果你未来依赖跨运行时支持，对照 [官方技能文档](https://code.claude.com/docs/en/skills) 验证。

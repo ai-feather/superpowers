@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Bisection script to find which test creates unwanted files/state
-# Usage: ./find-polluter.sh <file_or_dir_to_check> <test_pattern>
-# Example: ./find-polluter.sh '.git' 'src/**/*.test.ts'
+# 二分脚本，用于找出哪个测试创建了不需要的文件/状态
+# 用法：./find-polluter.sh <要检查的文件或目录> <测试模式>
+# 示例：./find-polluter.sh '.git' 'src/**/*.test.ts'
 
 set -e
 
@@ -18,7 +18,7 @@ echo "🔍 Searching for test that creates: $POLLUTION_CHECK"
 echo "Test pattern: $TEST_PATTERN"
 echo ""
 
-# Get list of test files
+# 获取测试文件列表
 TEST_FILES=$(find . -path "$TEST_PATTERN" | sort)
 TOTAL=$(echo "$TEST_FILES" | wc -l | tr -d ' ')
 
@@ -29,7 +29,7 @@ COUNT=0
 for TEST_FILE in $TEST_FILES; do
   COUNT=$((COUNT + 1))
 
-  # Skip if pollution already exists
+  # 如果污染已存在则跳过
   if [ -e "$POLLUTION_CHECK" ]; then
     echo "⚠️  Pollution already exists before test $COUNT/$TOTAL"
     echo "   Skipping: $TEST_FILE"
@@ -38,10 +38,10 @@ for TEST_FILE in $TEST_FILES; do
 
   echo "[$COUNT/$TOTAL] Testing: $TEST_FILE"
 
-  # Run the test
+  # 运行测试
   npm test "$TEST_FILE" > /dev/null 2>&1 || true
 
-  # Check if pollution appeared
+  # 检查是否出现了污染
   if [ -e "$POLLUTION_CHECK" ]; then
     echo ""
     echo "🎯 FOUND POLLUTER!"

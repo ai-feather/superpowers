@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Generate a review package: commit list, stat summary, and the net
-# diff with extended context, written to a file the reviewer reads in one
-# call. Using the recorded per-task BASE (not HEAD~1) keeps multi-commit
-# tasks intact.
+# 生成评审包：提交列表、stat 摘要，以及带扩展上下文的净 diff，
+# 写入一个文件供评审者一次性读取。使用记录的每任务 BASE（而非 HEAD~1）
+# 能保持多提交任务的完整。
 #
-# Usage: review-package BASE HEAD [OUTFILE]
-# Default OUTFILE: <repo-root>/.superpowers/sdd/review-<base7>..<head7>.diff
-# (named per range, so a re-review after fixes gets a distinct fresh file).
+# 用法：review-package BASE HEAD [OUTFILE]
+# 默认 OUTFILE：<repo-root>/.superpowers/sdd/review-<base7>..<head7>.diff
+# （按范围命名，这样修复后的复审会得到一个独立的新文件）。
 set -euo pipefail
 
 if [ $# -lt 2 ] || [ $# -gt 3 ]; then
